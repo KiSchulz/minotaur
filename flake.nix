@@ -219,6 +219,7 @@
               # Additional development tools
               python3
               redis
+              valkey
               
               # Debugging tools
               gdb
