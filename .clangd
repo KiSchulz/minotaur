@@ -1,0 +1,26 @@
+CompileFlags:
+  # Use compile_commands.json from the build directory
+  CompilationDatabase: build
+
+  # Add extra flags if needed
+  Add:
+    - "-std=c++20"
+    # Suppress some common warnings that might be noisy
+    - "-Wno-unused-parameter"
+
+Diagnostics:
+  # Don't complain about headers not being self-contained
+  UnusedIncludes: None
+  # Enable more diagnostics
+  ClangTidy:
+    Add: 
+      - modernize-*
+      - performance-*
+      - readability-*
+    Remove:
+      - modernize-use-trailing-return-type
+      - readability-identifier-length
+
+Index:
+  # Use background indexing for better performance
+  Background: Build
