@@ -166,18 +166,32 @@ debug &operator<<(const T &s)
 
 static optional<Rewrite>
 infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Parser &P) {
-  // Create canonicalizer with debug step
+  // Clone module and canonicalize
+  std::unique_ptr<llvm::Module> clonedModule;
+  ValueToValueMapTy valueMap;
+  Function *workingFunc = &F;
+  Instruction *workingInstr = I;
+  
   minotaur::Canonicalizer canonicalizer;
   if (config::canon_all) {
     canonicalizer.addStep(std::make_unique<DebugPrintCanonicalizationStep>());
-    // Canonicalize before generating cache key
-    canonicalizer.canonicalize(F);
+    
+    // Step 1: Clone Module
+    clonedModule = CloneModule(*F.getParent(), valueMap);
+    
+    // Step 2: Get the cloned function and instruction
+    workingFunc = cast<Function>(valueMap[&F]);
+    workingInstr = cast<Instruction>(valueMap[I]);
+    
+    // Step 3: Canonicalize ClonedFunc
+    canonicalizer.canonicalize(*workingFunc);
   }
 
+  // Step 4: Generate bytecode key from canonical form
   string bytecode;
   llvm::raw_string_ostream bs(bytecode);
-  //WriteBitcodeToFile(*F.getParent(), bs);
-  F.getParent()->print(bs, nullptr);
+  //WriteBitcodeToFile(*workingFunc->getParent(), bs);
+  workingFunc->getParent()->print(bs, nullptr);
   bs.flush();
 
   vector<Rewrite> RHSs;
@@ -189,7 +203,10 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
   // 2. force_infer: force synthesizer even if cache hits
   // 3. normal mode: run synthesizer if cache miss
 
-  // check cache only in normal mode
+  // Create parser with the working function (cloned if canonicalization enabled)
+  parse::Parser workingParser(*workingFunc);
+
+  // check cache only in normal mode (per sequence diagram line 16)
   if (enable_caching && !force_infer && !no_infer) {
     std::string rewrite;
 
@@ -199,18 +216,20 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
                     "previous run, skipping function: "
                 << F.getName() << "\n";
         if (config::canon_all) {
-          canonicalizer.decanonicalize(F);
+          // Decanonicalize the cloned function before discarding
+          canonicalizer.decanonicalize(*workingFunc);
         }
         return nullopt;
       } else {
         debug() << "[online] cache matched, using previous solution for "
                     "function: "
                 << F.getName() << "\n";
-        RHSs = P.parse(F, rewrite);
+        // Parse using cloned/canonical function context
+        RHSs = workingParser.parse(*workingFunc, rewrite);
         if (RHSs.empty()) {
           debug() << "[online] failed to parse cached solution\n";
           if (config::canon_all) {
-            canonicalizer.decanonicalize(F);
+            canonicalizer.decanonicalize(*workingFunc);
           }
           return nullopt;
         }
@@ -228,19 +247,20 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
     }
     debug() << "[online] skipping synthesizer\n";
     if (config::canon_all) {
-      canonicalizer.decanonicalize(F);
+      canonicalizer.decanonicalize(*workingFunc);
     }
     return nullopt;
   } else if (!from_cache) {
     // in force_infer mode, as from_cache is always false, we run synthesizer
     // in normal mode, we run synthesizer only when cache misses
-    debug() << "[online] working on function:\n" << F;
-    RHSs = EN.solve(F, I);
+    // Synthesizer works on canonical function
+    debug() << "[online] working on function:\n" << *workingFunc;
+    RHSs = EN.solve(*workingFunc, workingInstr);
     if (RHSs.empty()) {
       if (enable_caching)
         hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
       if (config::canon_all) {
-        canonicalizer.decanonicalize(F);
+        canonicalizer.decanonicalize(*workingFunc);
       }
       return nullopt;
     }
@@ -261,9 +281,12 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
                 rewrite, ctx, R.CostAfter, R.CostBefore, F.getName());
   }
 
-  // Decanonicalize before returning (adaptRewrite in sequence diagram)
+  // adaptRewrite: Map rewrite from cloned/canonical function to original
   if (config::canon_all) {
-    canonicalizer.decanonicalize(F);
+    canonicalizer.decanonicalize(*workingFunc);
+    // TODO: When we implement actual canonicalization (like ArgumentOrderCanonicalizationStep),
+    // we need to map the rewrite from the canonical function context to the original
+    // function context using the inverse permutation stored in metadata or associate state
   }
 
   return R;
