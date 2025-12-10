@@ -209,6 +209,87 @@
             drv = minotaur;
             exePath = "/bin/cache-infer";
           };
+          
+          # Generate compile_commands.json for clangd/IDE support
+          gen-compile-commands = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "gen-compile-commands" ''
+              set -e
+              
+              # Ensure we're in the project root
+              if [ ! -f "flake.nix" ]; then
+                echo "Error: Must run from the project root directory"
+                exit 1
+              fi
+              
+              echo "Generating compile_commands.json for clangd..."
+              
+              # Create build directory if it doesn't exist
+              mkdir -p build
+              cd build
+              
+              # Run cmake to generate compile_commands.json
+              ${pkgs.cmake}/bin/cmake \
+                -DALIVE2_SOURCE_DIR=${alive2-intrinsics.src} \
+                -DALIVE2_BUILD_DIR=${alive2-intrinsics}/lib \
+                -DCMAKE_PREFIX_PATH=${llvm-custom} \
+                -DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+                -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -G Ninja \
+                ..
+              
+              cd ..
+              
+              # Generate .clangd with resolved Nix store paths
+              echo "Generating .clangd configuration..."
+              cat > .clangd << 'EOF'
+              CompileFlags:
+                # Use compile_commands.json from the build directory
+                CompilationDatabase: build
+                
+                # Query the Nix store GCC wrapper for system include paths
+                # This is essential for clangd to find standard library headers like <string>
+                QueryDriver:
+                  - /nix/store/*-gcc-wrapper-*/bin/g++
+                  - /nix/store/*-gcc-wrapper-*/bin/gcc
+              
+                # Add extra flags if needed
+                # These are especially important for .h files which don't appear in compile_commands.json
+                Add:
+                  - "-std=c++20"
+                  - "-Wno-unused-parameter"
+                  # Project include paths
+                  - "-I${llvm-custom}/include"
+                  - "-I${alive2-intrinsics.src}"
+              
+              Diagnostics:
+                # Don't complain about headers not being self-contained
+                UnusedIncludes: None
+                # Enable more diagnostics
+                ClangTidy:
+                  Add: 
+                    - modernize-*
+                    - performance-*
+                    - readability-*
+                  Remove:
+                    - modernize-use-trailing-return-type
+                    - readability-identifier-length
+              
+              Index:
+                # Use background indexing for better performance
+                Background: Build
+              EOF
+              
+              echo ""
+              echo "✓ compile_commands.json generated in build/"
+              echo "✓ .clangd configuration generated with Nix store paths"
+              echo "  clangd will now work with your IDE!"
+              echo ""
+              echo "To build the project, run: nix build"
+              echo ""
+              echo "Note: Restart clangd in your IDE for changes to take effect"
+            '';
+            exePath = "/bin/gen-compile-commands";
+          };
         };
         
         devShells = {

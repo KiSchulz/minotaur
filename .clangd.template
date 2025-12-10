@@ -1,0 +1,44 @@
+# This is a template for .clangd configuration
+# DO NOT commit .clangd directly - it contains Nix store paths that are machine-specific
+#
+# Instead, run: nix run .#gen-compile-commands
+# This will generate both compile_commands.json and .clangd with the correct paths
+#
+# Add .clangd to .gitignore to prevent committing machine-specific paths
+
+CompileFlags:
+  # Use compile_commands.json from the build directory
+  CompilationDatabase: build
+  
+  # Query the Nix store GCC wrapper for system include paths
+  # This is essential for clangd to find standard library headers like <string>
+  QueryDriver:
+    - /nix/store/*-gcc-wrapper-*/bin/g++
+    - /nix/store/*-gcc-wrapper-*/bin/gcc
+
+  # Add extra flags if needed
+  # These are especially important for .h files which don't appear in compile_commands.json
+  Add:
+    - "-std=c++20"
+    - "-Wno-unused-parameter"
+    # Project include paths (these will be filled in by gen-compile-commands)
+    # - "-I/nix/store/...-llvm-.../include"
+    # - "-I/nix/store/...-source"
+
+Diagnostics:
+  # Don't complain about headers not being self-contained
+  UnusedIncludes: None
+  # Enable more diagnostics
+  ClangTidy:
+    Add: 
+      - modernize-*
+      - performance-*
+      - readability-*
+    Remove:
+      - modernize-use-trailing-return-type
+      - readability-identifier-length
+
+Index:
+  # Use background indexing for better performance
+  Background: Build
+
