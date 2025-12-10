@@ -160,9 +160,9 @@
             # are fully included. Add linker options to wrap Alive2 libs with --whole-archive
             substituteInPlace CMakeLists.txt \
               --replace-fail 'target_link_libraries(online
-  PRIVATE synthesizer slice $'{ALIVE_LIBS}' $'{Z3_LIBRARIES}' $'{LLVM_LIBS}')' \
+  PRIVATE synthesizer slice canonicalizer $'{ALIVE_LIBS}' $'{Z3_LIBRARIES}' $'{LLVM_LIBS}')' \
 'target_link_libraries(online
-  PRIVATE synthesizer slice $'{Z3_LIBRARIES}' $'{LLVM_LIBS}')
+  PRIVATE synthesizer slice canonicalizer $'{Z3_LIBRARIES}' $'{LLVM_LIBS}')
 
 # On Linux, wrap Alive2 static libs with --whole-archive to ensure all symbols are included
 if(UNIX AND NOT APPLE)

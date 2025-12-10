@@ -9,6 +9,8 @@
 #include "util/random.h"
 #include "utils.h"
 #include "parse.h"
+#include "canonicalizer.h"
+#include "canonicalizers.h"
 
 #include "ir/instr.h"
 #include "llvm_util/llvm2alive.h"
@@ -164,6 +166,14 @@ debug &operator<<(const T &s)
 
 static optional<Rewrite>
 infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Parser &P) {
+  // Create canonicalizer with debug step
+  minotaur::Canonicalizer canonicalizer;
+  if (config::canon_all) {
+    canonicalizer.addStep(std::make_unique<DebugPrintCanonicalizationStep>());
+    // Canonicalize before generating cache key
+    canonicalizer.canonicalize(F);
+  }
+
   string bytecode;
   llvm::raw_string_ostream bs(bytecode);
   //WriteBitcodeToFile(*F.getParent(), bs);
@@ -188,6 +198,9 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
         debug() << "[online] cache matched, but no solution found in "
                     "previous run, skipping function: "
                 << F.getName() << "\n";
+        if (config::canon_all) {
+          canonicalizer.decanonicalize(F);
+        }
         return nullopt;
       } else {
         debug() << "[online] cache matched, using previous solution for "
@@ -196,6 +209,9 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
         RHSs = P.parse(F, rewrite);
         if (RHSs.empty()) {
           debug() << "[online] failed to parse cached solution\n";
+          if (config::canon_all) {
+            canonicalizer.decanonicalize(F);
+          }
           return nullopt;
         }
         debug() << *RHSs[0].I << "\n";
@@ -211,6 +227,9 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
       hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
     }
     debug() << "[online] skipping synthesizer\n";
+    if (config::canon_all) {
+      canonicalizer.decanonicalize(F);
+    }
     return nullopt;
   } else if (!from_cache) {
     // in force_infer mode, as from_cache is always false, we run synthesizer
@@ -220,6 +239,9 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
     if (RHSs.empty()) {
       if (enable_caching)
         hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
+      if (config::canon_all) {
+        canonicalizer.decanonicalize(F);
+      }
       return nullopt;
     }
   }
@@ -238,6 +260,12 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
                 "", 0,
                 rewrite, ctx, R.CostAfter, R.CostBefore, F.getName());
   }
+
+  // Decanonicalize before returning (adaptRewrite in sequence diagram)
+  if (config::canon_all) {
+    canonicalizer.decanonicalize(F);
+  }
+
   return R;
 }
 
