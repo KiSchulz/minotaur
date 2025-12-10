@@ -26,6 +26,7 @@ bool smt_verbose = false;
 bool disable_avx512 = true;
 bool show_stats = false;
 bool return_first_solution = false;
+bool canon_all = false;
 
 unsigned slice_to;
 unsigned slicer_max_depth = 5;

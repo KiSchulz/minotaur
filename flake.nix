@@ -146,13 +146,33 @@
             "-DCMAKE_PREFIX_PATH=${llvm-custom}"
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=1"
             "-DCMAKE_BUILD_TYPE=RelWithDebInfo"
+            "-DCMAKE_CXX_FLAGS=-fexceptions"
           ];
           
           # Minotaur also tries to run git describe for version
+          # Also patch CMakeLists.txt to properly link static libraries on Linux
           postPatch = ''
             substituteInPlace CMakeLists.txt \
               --replace-fail '"''${GIT_EXECUTABLE}" describe --tags --dirty --always' \
                              '"${pkgs.coreutils}/bin/echo" "nix-build"'
+            
+            # For LLVM MODULE plugins on Linux, we need to ensure static library symbols
+            # are fully included. Add linker options to wrap Alive2 libs with --whole-archive
+            substituteInPlace CMakeLists.txt \
+              --replace-fail 'target_link_libraries(online
+  PRIVATE synthesizer slice $'{ALIVE_LIBS}' $'{Z3_LIBRARIES}' $'{LLVM_LIBS}')' \
+'target_link_libraries(online
+  PRIVATE synthesizer slice $'{Z3_LIBRARIES}' $'{LLVM_LIBS}')
+
+# On Linux, wrap Alive2 static libs with --whole-archive to ensure all symbols are included
+if(UNIX AND NOT APPLE)
+  target_link_options(online PRIVATE
+    "LINKER:--whole-archive"
+    $'{ALIVE_LIBS}'
+    "LINKER:--no-whole-archive")
+else()
+  target_link_libraries(online PRIVATE $'{ALIVE_LIBS}')
+endif()'
           '';
           
           checkInputs = with pkgs; [
@@ -164,8 +184,19 @@
           
           installPhase = ''
             mkdir -p $out/bin
+            mkdir -p $out/lib
+            
+            # Install the LLVM pass plugin
+            cp online.so $out/lib/
+            
+            # Install wrapper scripts and utilities
             cp minotaur-cc minotaur-c++ slice-cc slice-c++ $out/bin/
-            cp cache-dump cache-infer get-cost infer-cut.sh opt-minotaur.sh $out/bin/
+            cp cache-dump cache-infer get-cost infer-cut.sh $out/bin/
+            
+            # Fix opt-minotaur.sh to use installed library path
+            # Replace the build directory path with the installed path
+            sed "s|/build/.*/build/online.so|$out/lib/online.so|g" opt-minotaur.sh > $out/bin/opt-minotaur.sh
+            chmod +x $out/bin/opt-minotaur.sh
           '';
           
           meta = with pkgs.lib; {

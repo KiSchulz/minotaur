@@ -133,6 +133,11 @@ llvm::cl::opt<bool> force_infer(
     llvm::cl::desc("minotaur: force infer even if cache hits"),
     llvm::cl::init(false));
 
+llvm::cl::opt<bool> canon_all(
+    "minotaur-canon-all",
+    llvm::cl::desc("minotaur: enable canonicalization"),
+    llvm::cl::init(false));
+
 llvm::cl::opt<string> report_dir("minotaur-report-dir",
   llvm::cl::desc("Save report to disk"), llvm::cl::value_desc("directory"));
 
@@ -284,7 +289,12 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
   config::debug_codegen = debug_codegen;
   config::debug_parser = debug_parser;
   config::slice_to = slice_to;
+  config::canon_all = canon_all;
   smt::solver_print_queries(smt_verbose);
+  
+  if (config::canon_all) {
+    debug() << "[online] Canonicalization is enabled\n";
+  }
 
   smt::set_query_timeout(to_string(smt_to * 1000));
 

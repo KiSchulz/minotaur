@@ -21,6 +21,7 @@ extern bool smt_verbose;
 extern bool disable_avx512;
 extern bool show_stats;
 extern bool return_first_solution;
+extern bool canon_all;
 
 extern unsigned slice_to;
 extern unsigned slicer_max_depth;
