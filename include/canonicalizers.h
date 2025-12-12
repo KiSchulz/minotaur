@@ -6,25 +6,24 @@
 #include "llvm/IR/Function.h"
 #include "canonicalizer.h"
 
-class ArgumentOrderCanonicalizationStep : public minotaur::CanonicalizationStep {
-private:
-  // Maps function to the permutation needed to restore original order
-  std::map<llvm::Function*, std::vector<unsigned>> permutationMap;
+using namespace minotaur::canonicalizer;
+
+class ArgumentOrderStep : public CanonicalizationStep {
 
 public:
-  void canonicalize(llvm::Function &F) override;
+  ChangeSet canonicalize(llvm::Function &F) override;
   
-  void decanonicalize(llvm::Function &F) override;
+  void decanonicalize(llvm::Function &F, const ChangeSet& cs) override;
   
   std::string getName() const override {
     return "ArgumentOrderCanonicalizationStep";
   }
 };
 
-class DebugPrintCanonicalizationStep : public minotaur::CanonicalizationStep {
+class DebugPrintStep : public CanonicalizationStep {
 public:
-  void canonicalize(llvm::Function &F) override;
-  void decanonicalize(llvm::Function &F) override;
+  ChangeSet canonicalize(llvm::Function &F) override;
+  void decanonicalize(llvm::Function &F, const ChangeSet& cs) override;
   std::string getName() const override {
     return "DebugPrintCanonicalizationStep";
   }

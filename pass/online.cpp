@@ -172,9 +172,10 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
   Function *workingFunc = &F;
   Instruction *workingInstr = I;
   
-  minotaur::Canonicalizer canonicalizer;
+  minotaur::canonicalizer::Canonicalizer canonicalizer;
+  std::vector<ChangeSet> changeSets;
   if (config::canon_all) {
-    canonicalizer.addStep(std::make_unique<DebugPrintCanonicalizationStep>());
+    canonicalizer.addStep(std::make_unique<DebugPrintStep>());
     
     // Step 1: Clone Module
     clonedModule = CloneModule(*F.getParent(), valueMap);
@@ -184,7 +185,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
     workingInstr = cast<Instruction>(valueMap[I]);
     
     // Step 3: Canonicalize ClonedFunc
-    canonicalizer.canonicalize(*workingFunc);
+    changeSets = canonicalizer.canonicalize(*workingFunc);
   }
 
   // Step 4: Generate bytecode key from canonical form
@@ -217,7 +218,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
                 << F.getName() << "\n";
         if (config::canon_all) {
           // Decanonicalize the cloned function before discarding
-          canonicalizer.decanonicalize(*workingFunc);
+          canonicalizer.decanonicalize(*workingFunc, changeSets);
         }
         return nullopt;
       } else {
@@ -229,7 +230,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
         if (RHSs.empty()) {
           debug() << "[online] failed to parse cached solution\n";
           if (config::canon_all) {
-            canonicalizer.decanonicalize(*workingFunc);
+            canonicalizer.decanonicalize(*workingFunc, changeSets);
           }
           return nullopt;
         }
@@ -247,7 +248,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
     }
     debug() << "[online] skipping synthesizer\n";
     if (config::canon_all) {
-      canonicalizer.decanonicalize(*workingFunc);
+      canonicalizer.decanonicalize(*workingFunc, changeSets);
     }
     return nullopt;
   } else if (!from_cache) {
@@ -260,7 +261,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
       if (enable_caching)
         hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
       if (config::canon_all) {
-        canonicalizer.decanonicalize(*workingFunc);
+        canonicalizer.decanonicalize(*workingFunc, changeSets);
       }
       return nullopt;
     }
@@ -283,7 +284,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
 
   // adaptRewrite: Map rewrite from cloned/canonical function to original
   if (config::canon_all) {
-    canonicalizer.decanonicalize(*workingFunc);
+    canonicalizer.decanonicalize(*workingFunc, changeSets);
     // TODO: When we implement actual canonicalization (like ArgumentOrderCanonicalizationStep),
     // we need to map the rewrite from the canonical function context to the original
     // function context using the inverse permutation stored in metadata or associate state

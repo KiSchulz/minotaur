@@ -1,22 +1,25 @@
 #include "canonicalizer.h"
-using namespace minotaur;
+using namespace minotaur::canonicalizer;
 void Canonicalizer::addStep(std::unique_ptr<CanonicalizationStep> step) {
     steps.push_back(std::move(step));
 };
 
-void Canonicalizer::canonicalize(llvm::Function &F) {
+std::vector<ChangeSet> Canonicalizer::canonicalize(llvm::Function &F) {
+    std::vector<ChangeSet> changeSets;
     for (const auto& step : steps) {
         if (step->shouldRun(F)) {
-            step->canonicalize(F);
+            changeSets.push_back(step->canonicalize(F));
         }
     }
+    return changeSets;
 }
 
-void Canonicalizer::decanonicalize(llvm::Function &F) {
+void Canonicalizer::decanonicalize(llvm::Function &F, const std::vector<ChangeSet>& changes) {
     // Apply decanonicalization in reverse order
+    int changeIndex = changes.size() - 1;
     for (auto it = steps.rbegin(); it != steps.rend(); ++it) {
         if ((*it)->shouldRun(F)) {
-            (*it)->decanonicalize(F);
+            (*it)->decanonicalize(F, changes[changeIndex--]);
         }
     }
 }
