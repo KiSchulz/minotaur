@@ -8,15 +8,21 @@
 
 using namespace minotaur::canonicalizer;
 
-class ArgumentOrderStep : public CanonicalizationStep {
-
+class UnusedArgumentStep : public CanonicalizationStep {
 public:
   ChangeSet canonicalize(llvm::Function &F) override;
-  
   void decanonicalize(llvm::Function &F, const ChangeSet& cs) override;
-  
   std::string getName() const override {
-    return "ArgumentOrderCanonicalizationStep";
+    return "UnusedArgumentStep";
+  }
+};
+
+class ArgumentOrderStep : public CanonicalizationStep {
+public:
+  ChangeSet canonicalize(llvm::Function &F) override;
+  void decanonicalize(llvm::Function &F, const ChangeSet& cs) override;
+  std::string getName() const override {
+    return "ArgumentOrderStep";
   }
 };
 
@@ -25,6 +31,6 @@ public:
   ChangeSet canonicalize(llvm::Function &F) override;
   void decanonicalize(llvm::Function &F, const ChangeSet& cs) override;
   std::string getName() const override {
-    return "DebugPrintCanonicalizationStep";
+    return "DebugPrintStep";
   }
 };
