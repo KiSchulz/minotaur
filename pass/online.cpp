@@ -175,7 +175,7 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
   minotaur::canonicalizer::Canonicalizer canonicalizer;
   std::vector<ChangeSet> changeSets;
   if (config::canon_all) {
-    canonicalizer.addStep(std::make_unique<UnusedArgumentStep>());
+    canonicalizer.addStep(std::make_unique<ArgumentOrderStep>());
     
     // Step 1: Clone Module
     clonedModule = CloneModule(*F.getParent(), valueMap);
