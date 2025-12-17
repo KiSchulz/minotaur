@@ -149,6 +149,11 @@ AliveEngine::find_model(Transform &t,
     if (refines.isFalse())
       return std::move(refines);
 
+    // std::cerr << "[AE] pre_src:\n" << pre_src << "\n";
+    // std::cerr << "[AE] pre_tgt:\n" << pre_tgt << "\n";
+    // std::cerr << "[AE] refines:\n" << refines << "\n";
+    // std::cerr << "[AE] refines.simplify():\n" << refines.simplify() << "\n";
+
     auto fml = pre_tgt && pre_src.implies(refines);
     return axioms_expr && preprocess(t, qvars, uvars, std::move(fml));
   };
@@ -166,8 +171,9 @@ AliveEngine::find_model(Transform &t,
 
   // TODO: dom check seems redundant
   // TODO: add memory back here
-  auto r =
-      check_expr(mk_fml(poison_cnstr && value_cnstr).simplify(), "synthesis");
+  auto mkfml = mk_fml(poison_cnstr && value_cnstr).simplify();
+  // std::cerr << "[AE] mkfml:\n" << mkfml << "\n";
+  auto r = check_expr(mkfml, "synthesis");
 
   if (r.isInvalid()) {
     errs.add("Invalid expr", false);
@@ -275,9 +281,11 @@ bool AliveEngine::constantSynthesis(
   std::unordered_map<const IR::Value *, smt::expr> result;
   Errors errs = find_model(t, result);
 
+  std::cerr << "[AE] errs.hasWarnings(): " << errs.hasWarnings() << "\n";
   bool ret(errs);
   if (ret) {
     *debug << "unable to find constants: \n" << errs;
+    std::cerr << "[AE] errs:\n" << errs << "\n";
     return false;
   }
 

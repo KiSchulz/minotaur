@@ -861,6 +861,7 @@ push:
       } else {
         AliveEngine AE(TLI, true);
         Good = AE.constantSynthesis(*Src, *Tgt, ConstantResults);
+        std::cerr << "[enumerator] is Good: " << Good << "\n";
       }
     } catch (AliveException E) {
       debug() << E.msg << "\n";
