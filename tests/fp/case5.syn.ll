@@ -1,4 +1,4 @@
-; CHECK: fcmp oge double %0, 1.280000e+02
+; CHECK: fcmp ogt double %0, 0x405FFFFFFFFFFFFF
 declare double @llvm.floor.f64(double)
 
 define i1 @src(double %0, i1 %1) {

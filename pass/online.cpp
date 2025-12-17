@@ -444,6 +444,7 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
           }
           return false;
         });
+        debug() << "[online] optimized function step:" << *F.getParent() << "\n";
       }
     }
   }
@@ -452,6 +453,7 @@ final:
   if (changed) {
     F.removeFnAttr("min-legal-vector-width");
     eliminate_dead_code(F);
+    debug() << "[online] optimized function:" << *F.getParent() << "\n";
   }
 
   if (enable_caching) {

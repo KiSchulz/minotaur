@@ -1,0 +1,40 @@
+Failing Tests:
+    Minotaur :: datamovements/insertelement10.syn.ll
+    Minotaur :: datamovements/insertelement11.syn.ll
+    Minotaur :: datamovements/shuffle2.syn.ll
+    Minotaur :: datamovements/shuffle3.syn.ll
+    Minotaur :: datamovements/shuffle4.syn.ll
+    Minotaur :: datamovements/shuffle6.syn.ll
+    Minotaur :: datamovements/shuffle7.syn.ll
+    Minotaur :: fp/case2.syn.ll
+    Minotaur :: fp/fabs2.syn.ll
+    Minotaur :: fp/fadd2.syn.ll
+    Minotaur :: fp/fmul0.syn.ll
+    Minotaur :: fp/fneg1.syn.ll
+    Minotaur :: fp/fptrunc0.syn.ll
+    Minotaur :: fp/maximum0.syn.ll
+    Minotaur :: fp/maximum1.syn.ll
+    Minotaur :: fp/maximum2.syn.ll
+    Minotaur :: fp/maxnum2.syn.ll
+    Minotaur :: fp/minimum2.syn.ll
+    Minotaur :: fp/minnum2.syn.ll
+    Minotaur :: hacks/pmaddwd-merge.syn.ll
+    Minotaur :: hacks/shuffle-ext-to-pmaddwd2.syn.ll
+    Minotaur :: hacks/shuffle-ext-to-pmaddwd3.syn.ll
+    Minotaur :: hacks/shuffle-ext-to-pmaddwd4.syn.ll
+    Minotaur :: reverse1.syn.ll
+    Minotaur :: reverse2.syn.ll
+    Minotaur :: syn_pavg1.syn.ll
+    Minotaur :: syn_pavg2.syn.ll
+    Minotaur :: syn_pavg3.syn.ll
+    Minotaur :: syn_pmaddwd1.syn.ll
+
+timeout but work:
+  - fp/fabs2.syn.ll: hits timeout on 5 minutes but works for 10 minutes
+
+constantSynthesis Bug/ bug when extending and truncating halfs, floats, doubles:
+  - fp/fadd2.syn.ll: logical issue since it is verified by alive2 correct between src and cut.172 but not when usings minotaurs query
+  - fp/fmul0.syn.ll: finishes with no optimization could be the same issue as with fadd2.syn.ll
+
+working but buggy:
+  - fp/fneg1.syn.ll: the tests expects a different solution than what is produced by minotaur enventough it is lested in the sketches but not while then iterating so it might be filtered
