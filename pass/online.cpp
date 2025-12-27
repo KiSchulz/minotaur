@@ -34,7 +34,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
-#include "llvm/Passes/PassPlugin.h"
+#include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
@@ -485,7 +485,7 @@ bool pipelineParsingCallback(StringRef Name, FunctionPassManager &FPM,
 
 void passBuilderCallback(PassBuilder &PB) {
   PB.registerPipelineParsingCallback(pipelineParsingCallback);
-  PB.registerVectorCombineCallback(
+  PB.registerVectorizerEndEPCallback(
       [](llvm::FunctionPassManager &FPM, llvm::OptimizationLevel) {
         FPM.addPass(SuperoptimizerPass());
       });

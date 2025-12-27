@@ -3,7 +3,6 @@
 #include "codegen.h"
 #include "expr.h"
 
-#include "ir/instr.h"
 
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -11,12 +10,11 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/IntrinsicsX86.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-
-#include <iostream>
 
 using namespace std;
 using namespace llvm;
@@ -35,29 +33,7 @@ debug &operator<<(const T &s)
 
 namespace minotaur {
 
-#if(false)
-static constexpr
-std::array<llvm::Intrinsic::ID, IR::X86IntrinBinOp::numOfX86Intrinsics> IntrinsicBinOpIDs = {
-#define PROCESS(NAME,A,B,C,D,E,F) llvm::Intrinsic::NAME,
-#include "ir/intrinsics_binop.h"
-#undef PROCESS
-};
 
-static llvm::Intrinsic::ID getIntrinsicID(IR::X86IntrinBinOp::Op op) {
-  return IntrinsicBinOpIDs[op];
-}
-
-static constexpr
-std::array<llvm::Intrinsic::ID, IR::X86IntrinTerOp::numOfX86Intrinsics> IntrinsicTerOpIDs = {
-#define PROCESS(NAME,A,B,C,D,E,F,G,H) llvm::Intrinsic::NAME,
-#include "ir/intrinsics_terop.h"
-#undef PROCESS
-};
-
-static llvm::Intrinsic::ID getIntrinsicID(IR::X86IntrinTerOp::Op op) {
-  return IntrinsicTerOpIDs[op];
-}
-#endif
 
 llvm::Value *LLVMGen::bitcastTo(llvm::Value *V, llvm::Type *to) {
   if (auto BC = dyn_cast<BitCastInst>(V)) {
@@ -360,7 +336,6 @@ LLVMGen::codeGenImpl(Inst *I, ValueToValueMapTy &VMap) {
       break;
     }
     return r;
-#if(false)
   } else if (auto B = dynamic_cast<SIMDBinOpInst*>(I)) {
     type op0_ty = getIntrinsicOp0Ty(B->K());
     type op1_ty = getIntrinsicOp1Ty(B->K());
@@ -374,7 +349,7 @@ LLVMGen::codeGenImpl(Inst *I, ValueToValueMapTy &VMap) {
       report_fatal_error("right operand width mismatch");
     op1 = bitcastTo(op1, op1_ty.toLLVM(C));
 
-    llvm::Function *decl = Intrinsic::getDeclaration(M, getIntrinsicID(B->K()));
+    llvm::Function *decl = Intrinsic::getOrInsertDeclaration(M, getIntrinsicID(B->K()));
     IntrinsicDecls.insert(decl);
 
     llvm::Value *CI = CallInst::Create(decl,
@@ -382,7 +357,6 @@ LLVMGen::codeGenImpl(Inst *I, ValueToValueMapTy &VMap) {
                                        "intr",
                                        cast<Instruction>(b.GetInsertPoint()));
     return CI;
-#endif
   // TODO: handle terop
   } else if (auto FSV = dynamic_cast<FakeShuffleInst*>(I)) {
     auto op0 = codeGenImpl(FSV->L(), VMap);
