@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ; CHECK: rewrite: (var float %__n0)
 define float @src(float %0) {
 entry:

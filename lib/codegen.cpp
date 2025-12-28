@@ -33,7 +33,27 @@ debug &operator<<(const T &s)
 
 namespace minotaur {
 
+static constexpr
+std::array<llvm::Intrinsic::ID, numOfX86BinOpIntrinsics> IntrinsicBinOpIDs = {
+#define PROCESS(NAME,A,B,C,D,E,F) llvm::Intrinsic::NAME,
+#include "ir/x86_intrinsics_binop.inc"
+#undef PROCESS
+};
 
+static llvm::Intrinsic::ID getIntrinsicID(IR::X86IntrinBinOp::Op op) {
+  return IntrinsicBinOpIDs[op];
+}
+
+static constexpr
+std::array<llvm::Intrinsic::ID, numOfX86TerOpIntrinsics> IntrinsicTerOpIDs = {
+#define PROCESS(NAME,A,B,C,D,E,F,G,H) llvm::Intrinsic::NAME,
+#include "ir/x86_intrinsics_terop.inc"
+#undef PROCESS
+};
+
+static llvm::Intrinsic::ID getIntrinsicID(IR::X86IntrinTerOp::Op op) {
+  return IntrinsicTerOpIDs[op];
+}
 
 llvm::Value *LLVMGen::bitcastTo(llvm::Value *V, llvm::Type *to) {
   if (auto BC = dyn_cast<BitCastInst>(V)) {
