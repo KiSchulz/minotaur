@@ -5,18 +5,15 @@
 #include "config.h"
 #include "lexer.h"
 
-#include "iostream"
-#include "ir/instr.h"
 #include "util/compiler.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/AsmParser/Parser.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/ValueSymbolTable.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/IR/InstIterator.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/raw_ostream.h"
+
 #include <string_view>
 
 #define YYDEBUG 0
@@ -474,11 +471,10 @@ FPConversion *Parser::parse_fpconv(token op_token) {
   return T;
 }
 
-#if(false)
 SIMDBinOpInst *Parser::parse_x86(string_view ops) {
   IR::X86IntrinBinOp::Op op;
   #define PROCESS(NAME,A,B,C,D,E,F) if (ops == #NAME) op = IR::X86IntrinBinOp::NAME;
-  #include "ir/intrinsics_binop.h"
+  #include "ir/x86_intrinsics_binop.inc"
   #undef PROCESS
 
   auto a = parse_expr();
@@ -490,7 +486,6 @@ SIMDBinOpInst *Parser::parse_x86(string_view ops) {
   exprs.emplace_back(std::move(CI));
   return T;
 }
-#endif
 
 Select *Parser::parse_select() {
   auto cond = parse_expr();

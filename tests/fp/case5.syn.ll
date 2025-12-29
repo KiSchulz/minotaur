@@ -1,4 +1,4 @@
-; CHECK: fcmp ogt double %0, 0x405FFFFFFFFFFFFF
+; CHECK: (fcmp_ogt (var double %__n3) (reservedconst double |double 0x405FFFFFFFFFFFFF|) b1)
 declare double @llvm.floor.f64(double)
 
 define i1 @src(double %0, i1 %1) {

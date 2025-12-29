@@ -1,26 +1,20 @@
 // Copyright (c) 2020-present, author: Zhengyang Liu (liuz@cs.utah.edu).
 // Distributed under the MIT license that can be found in the LICENSE file.
 #include "alive-interface.h"
-#include "config.h"
-#include "expr.h"
 
 #include "ir/globals.h"
-#include "llvm_util/compare.h"
 #include "llvm_util/llvm2alive.h"
 #include "smt/smt.h"
-#include "tools/transform.h"
 #include "util/compiler.h"
-#include "util/config.h"
 #include "util/errors.h"
 #include "util/symexec.h"
-#include "llvm/ADT/APSInt.h"
-#include "llvm/ADT/DenseMap.h"
+#include "tools/transform.h"
+#include "llvm_util/compare.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/IR/Argument.h"
-#include "llvm/Support/TypeSize.h"
+#include "llvm/Transforms/Utils/Local.h"
 
-#include <map>
 #include <sstream>
 #include <unordered_map>
 
@@ -40,7 +34,7 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
 
   // eliminate all quantified boolean vars; Z3 gets too slow with those
   auto qvars = qvars0;
-  for (auto I = qvars.begin(); I != qvars.end();) {
+  for (auto I = qvars.begin(); I != qvars.end(); ) {
     auto &var = *I;
     if (!var.isBool()) {
       ++I;
@@ -58,8 +52,8 @@ static expr preprocess(Transform &t, const set<expr> &qvars0,
 
 namespace minotaur {
 
-bool AliveEngine::compareFunctions(llvm::Function &Func1,
-                                   llvm::Function &Func2) {
+bool
+AliveEngine::compareFunctions(llvm::Function &Func1, llvm::Function &Func2) {
   smt::smt_initializer smt_init;
   llvm_util::Verifier verifier(TLI, smt_init, *debug);
   verifier.compareFunctions(Func1, Func2);
@@ -69,21 +63,17 @@ bool AliveEngine::compareFunctions(llvm::Function &Func1,
 
 Errors
 AliveEngine::find_model(Transform &t,
-                        unordered_map<const IR::Value *, smt::expr> &result) {
+                        unordered_map<const IR::Value*, smt::expr> &result) {
 
   t.preprocess();
-  t.tgt.syncDataWithSrc(t.src);
-  //::calculateAndInitConstants(t);
 
   TransformPrintOpts print_opts;
   t.print(*debug, print_opts);
 
-  State::resetGlobals();
-  IR::State src_state(t.src, true);
-  util::sym_exec(src_state);
-  IR::State tgt_state(t.tgt, false);
-  tgt_state.syncSEdataWithSrc(src_state);
-  util::sym_exec(tgt_state);
+  tools::TransformVerify tv_exec(t, /*check_each_var=*/false);
+  auto [src_state_u, tgt_state_u] = tv_exec.exec();
+  auto &src_state = *src_state_u;
+  auto &tgt_state = *tgt_state_u;
   auto pre_src_and = src_state.getPre();
   auto &pre_tgt_and = tgt_state.getPre();
 
@@ -101,7 +91,7 @@ AliveEngine::find_model(Transform &t,
   Errors errs;
 
   for (auto &i : tgt_state.getFn().getInputs()) {
-    if (!dynamic_cast<const Input *>(&i))
+    if (!dynamic_cast<const Input*>(&i))
       continue;
 
     auto *val = tgt_state.at(i);
@@ -132,10 +122,10 @@ AliveEngine::find_model(Transform &t,
     errs.add("Unknown type is found in argument list.", false);
     return errs;
   }
-  auto &src_nondet_vars = src_state.getNondetVars();
-  qvars.insert(src_nondet_vars.begin(), src_nondet_vars.end());
-  auto &fn_qvars = tgt_state.getFnQuantVars();
-  qvars.insert(fn_qvars.begin(), fn_qvars.end());
+  // auto &src_nondet_vars = src_state.getNondetVars();
+  // qvars.insert(src_nondet_vars.begin(), src_nondet_vars.end());
+  // auto &fn_qvars = tgt_state.getFnQuantVars();
+  // qvars.insert(fn_qvars.begin(), fn_qvars.end());
   auto dom_a = sv.domain;
   auto dom_b = tv.domain;
 
@@ -158,16 +148,16 @@ AliveEngine::find_model(Transform &t,
     return axioms_expr && preprocess(t, qvars, uvars, std::move(fml));
   };
 
+
   const IR::Type &ty = t.src.getType();
-  auto [poison_cnstr, value_cnstr] =
-      ty.refines(src_state, tgt_state, sv.val, tv.val);
+  auto [poison_cnstr, value_cnstr] = ty.refines(src_state, tgt_state, sv.val, tv.val);
   expr dom = dom_a && dom_b;
 
-  /*  auto src_mem = src_state.returnMemory();
-    auto tgt_mem = tgt_state.returnMemory();
-    auto [memory_cnstr0, ptr_refinement0, mem_undef]
-      = src_mem.refined(tgt_mem, false);
-    qvars.insert(mem_undef.begin(), mem_undef.end());*/
+/*  auto src_mem = src_state.returnMemory();
+  auto tgt_mem = tgt_state.returnMemory();
+  auto [memory_cnstr0, ptr_refinement0, mem_undef]
+    = src_mem.refined(tgt_mem, false);
+  qvars.insert(mem_undef.begin(), mem_undef.end());*/
 
   // TODO: dom check seems redundant
   // TODO: add memory back here
@@ -204,17 +194,16 @@ AliveEngine::find_model(Transform &t,
   auto &m = r.getModel();
   s << ";result\n";
   for (auto &i : tgt_state.getFn().getInputs()) {
-    if (!dynamic_cast<const Input *>(&i) &&
-        !dynamic_cast<const ConstantInput *>(&i))
-      continue;
+    if (!dynamic_cast<const Input*>(&i) &&
+        !dynamic_cast<const ConstantInput*>(&i))
+        continue;
 
     auto *val = tgt_state.at(i);
     if (!val)
       continue;
 
     if (i.getName().rfind("%_reservedc", 0) == 0) {
-      auto In = dynamic_cast<const Input *>(&i);
-      result[In] = m.eval(val->val.value, true);
+      result[&i] = m.eval(val->val.value, true);
       s << i << " = ";
       tools::print_model_val(s, tgt_state, m, &i, i.getType(), val->val);
       s << '\n';
@@ -241,22 +230,40 @@ static const llvm::fltSemantics &getFloatSemantics(unsigned BitWidth) {
 }
 
 // call constant synthesizer and fill in constMap if synthesis suceeeds
-bool AliveEngine::constantSynthesis(
-    llvm::Function &src, llvm::Function &tgt,
-    unordered_map<llvm::Argument *, llvm::Constant *> &ConstMap) {
+bool
+AliveEngine::constantSynthesis(llvm::Function &src, llvm::Function &tgt,
+   unordered_map<llvm::Argument*, llvm::Constant*>& ConstMap) {
 
   std::optional<smt::smt_initializer> smt_init;
   smt_init.emplace();
 
-  auto Func1 = llvm_util::llvm2alive(src, TLI.getTLI(src), true);
-  auto Func2 = llvm_util::llvm2alive(tgt, TLI.getTLI(tgt), true);
+  // Alive2's symbolic executor/VCGen is much more robust when the input IR
+  // doesn't contain unreachable basic blocks (e.g., "sink" blocks with no preds),
+  // which are common in Minotaur's sliced candidates and test corpus.
+  //
+  // These blocks are semantically irrelevant, but we've observed they can trigger
+  // crashes inside Alive2 when doing constant synthesis.
+  llvm::removeUnreachableBlocks(src);
+  llvm::removeUnreachableBlocks(tgt);
 
-  if (!Func1.has_value() || !Func2.has_value()) {
+  auto Func1 = llvm_util::llvm2alive(src, TLI.getTLI(src), true);
+
+  if (!Func1.has_value()) {
+    *debug << "error found when converting llvm to alive2 (src)\n";
+    return false;
+  }
+
+  // Target conversion must be done with IsSrc=false and using the globals from
+  // the source to keep memories/globals consistent across the pair.
+  auto gvsInSrc = Func1->getGlobalVars();
+  auto Func2 = llvm_util::llvm2alive(tgt, TLI.getTLI(tgt), false, gvsInSrc);
+
+  if (!Func2.has_value()) {
     *debug << "error found when converting llvm to alive2\n";
     return false;
   }
 
-  unordered_map<string, Argument *> Arguments;
+  unordered_map<string, Argument*> Arguments;
   for (auto &arg : tgt.args()) {
     string ArgName = "%" + string(arg.getName());
     if (ArgName.starts_with("%_reservedc")) {
@@ -268,7 +275,7 @@ bool AliveEngine::constantSynthesis(
   t.src = std::move(*Func1);
   t.tgt = std::move(*Func2);
 
-  unordered_map<const IR::Value *, Argument *> Inputs;
+  unordered_map<const IR::Value*, Argument*> Inputs;
   for (auto &&I : t.tgt.getInputs()) {
     string InputName = I.getName();
 
@@ -278,7 +285,7 @@ bool AliveEngine::constantSynthesis(
   }
 
   // assume type verifies
-  std::unordered_map<const IR::Value *, smt::expr> result;
+  std::unordered_map<const IR::Value*, smt::expr> result;
   Errors errs = find_model(t, result);
 
   std::cerr << "[AE] errs.hasWarnings(): " << errs.hasWarnings() << "\n";
@@ -290,24 +297,30 @@ bool AliveEngine::constantSynthesis(
   }
 
   for (auto I : Inputs) {
+    auto it = result.find(I.first);
+    if (it == result.end()) {
+      *debug << "unable to find model value for " << I.first->getName() << "\n";
+      return false;
+    }
+    auto &model_v = it->second;
     auto ty = I.second->getType();
     if (ty->isIntegerTy()) {
       IntegerType *ity = cast<IntegerType>(ty);
       ConstMap[I.second] =
-          ConstantInt::get(ity, result[I.first].numeral_string(), 10);
+        ConstantInt::get(ity, model_v.numeral_string(), 10);
     } else if (ty->isIEEELikeFPTy()) {
       unsigned bits = ty->getPrimitiveSizeInBits();
-      APInt integer(bits, result[I.first].numeral_string(), 10);
+      APInt integer(bits, model_v.numeral_string(), 10);
       APFloat fp(getFloatSemantics(bits), integer);
 
       ConstMap[I.second] = ConstantFP::get(ty, fp);
     } else if (ty->isVectorTy()) {
-      auto flat = result[I.first];
+      auto flat = model_v;
       FixedVectorType *vty = cast<FixedVectorType>(ty);
       auto ety = vty->getElementType();
       unsigned bits = vty->getScalarSizeInBits();
-      SmallVector<llvm::Constant *> v;
-      for (int i = vty->getElementCount().getKnownMinValue() - 1; i >= 0; i--) {
+      SmallVector<llvm::Constant*> v;
+      for (int i = vty->getElementCount().getKnownMinValue()-1; i >= 0; i --) {
         auto elem = flat.extract((i + 1) * bits - 1, i * bits);
         if (!elem.isConst())
           return false;
@@ -324,7 +337,8 @@ bool AliveEngine::constantSynthesis(
         }
       }
       ConstMap[I.second] = ConstantVector::get(v);
-    } else {
+    }
+    else {
       UNREACHABLE();
     }
   }
@@ -332,4 +346,4 @@ bool AliveEngine::constantSynthesis(
   return true;
 }
 
-} // namespace minotaur
+}

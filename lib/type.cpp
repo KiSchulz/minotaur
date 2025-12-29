@@ -2,14 +2,12 @@
 // Distributed under the MIT license that can be found in the LICENSE file.
 #include "type.h"
 
-#include "ir/instr.h"
 #include "util/compiler.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Type.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
-#include <string>
+
 
 using namespace std;
 using namespace llvm;
@@ -48,7 +46,7 @@ bool type::operator==(const type &rhs) const {
 }
 
 bool type::same_width(const type &rhs) const {
-  assert(valid());
+  assert(isValid());
   return getWidth() == rhs.getWidth();
 }
 
@@ -154,22 +152,38 @@ raw_ostream& operator<<(raw_ostream &os, const type &ty) {
   return os;
 }
 
-#if(false)
 type getIntrinsicOp0Ty(IR::X86IntrinBinOp::Op op) {
-  return type::IntegerVectorizable(IR::X86IntrinBinOp::shape_op0[op].first,
-                                   IR::X86IntrinBinOp::shape_op0[op].second);
+  switch (op) {
+#define PROCESS(NAME, A, B, C, D, E, F)                                          \
+  case IR::X86IntrinBinOp::NAME:                                                \
+    return type::IntegerVectorizable(C, D);
+#include "ir/x86_intrinsics_binop.inc"
+#undef PROCESS
+  }
+  UNREACHABLE();
 }
 
 type getIntrinsicOp1Ty(IR::X86IntrinBinOp::Op op) {
-  return type::IntegerVectorizable(IR::X86IntrinBinOp::shape_op1[op].first,
-                                   IR::X86IntrinBinOp::shape_op1[op].second);
+  switch (op) {
+#define PROCESS(NAME, A, B, C, D, E, F)                                          \
+  case IR::X86IntrinBinOp::NAME:                                                \
+    return type::IntegerVectorizable(E, F);
+#include "ir/x86_intrinsics_binop.inc"
+#undef PROCESS
+  }
+  UNREACHABLE();
 }
 
 type getIntrinsicRetTy(IR::X86IntrinBinOp::Op op) {
-  return type::IntegerVectorizable(IR::X86IntrinBinOp::shape_ret[op].first,
-                                   IR::X86IntrinBinOp::shape_ret[op].second);
+  switch (op) {
+#define PROCESS(NAME, A, B, C, D, E, F)                                          \
+  case IR::X86IntrinBinOp::NAME:                                                \
+    return type::IntegerVectorizable(A, B);
+#include "ir/x86_intrinsics_binop.inc"
+#undef PROCESS
+  }
+  UNREACHABLE();
 }
-#endif
 
 vector<type> getIntegerVectorTypes(type ty) {
   unsigned width = ty.getWidth();

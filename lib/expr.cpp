@@ -1,17 +1,7 @@
 // Copyright (c) 2020-present, author: Zhengyang Liu (liuz@cs.utah.edu).
 // Distributed under the MIT license that can be found in the LICENSE file.
 #include "expr.h"
-#include "ir/instr.h"
 #include "type.h"
-#include "util/compiler.h"
-
-#include "llvm/IR/Constants.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/LLVMContext.h"
-
-#include <algorithm>
-#include <string>
-#include <iostream>
 
 using namespace std;
 using namespace llvm;
@@ -152,13 +142,13 @@ void FCmp::print(raw_ostream &os) const {
   os << ")";
 }
 
-// void SIMDBinOpInst::print(raw_ostream &os) const {
-//   os << "(" << IR::X86IntrinBinOp::getOpName(op) << " ";
-//   lhs->print(os);
-//   os << " ";
-//   rhs->print(os);
-//   os << ")";
-// }
+void SIMDBinOpInst::print(raw_ostream &os) const {
+   os << "(" << getOpName(op) << " ";
+   lhs->print(os);
+   os << " ";
+   rhs->print(os);
+   os << ")";
+}
 
 void FakeShuffleInst::print(raw_ostream &os) const {
   if (rhs)

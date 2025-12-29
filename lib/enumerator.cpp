@@ -9,15 +9,7 @@
 #include "utils.h"
 #include "type.h"
 
-#include "ir/globals.h"
-#include "ir/instr.h"
-#include "smt/smt.h"
-#include "tools/transform.h"
 #include "util/compiler.h"
-#include "util/symexec.h"
-#include "util/config.h"
-#include "util/dataflow.h"
-#include "util/version.h"
 #include "llvm_util/llvm2alive.h"
 #include "llvm_util/utils.h"
 
@@ -40,12 +32,9 @@
 #include "llvm/Support/KnownBits.h"
 
 #include <algorithm>
-#include <iostream>
 #include <memory>
-#include <queue>
 #include <vector>
 #include <set>
-#include <map>
 
 using namespace tools;
 using namespace util;
@@ -493,9 +482,7 @@ bool Enumerator::getSketches(llvm::Value *V, vector<Sketch> &sketches) {
     }
   }
 
-#if(false)
-  // BinaryIntrinsics
-  for (unsigned K = 0; K < X86IntrinBinOp::numOfX86Intrinsics; ++K) {
+  for (unsigned K = 0; K < numOfX86BinOpIntrinsics; ++K) {
     if (expected.isFP())
       continue;
     // typecheck for return val
@@ -547,7 +534,6 @@ bool Enumerator::getSketches(llvm::Value *V, vector<Sketch> &sketches) {
       }
     }
   }
-#endif
 
   // shufflevector
   for (auto Op0 = Comps.begin(); Op0 != Comps.end(); ++Op0) {
