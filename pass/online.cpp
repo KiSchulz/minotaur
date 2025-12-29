@@ -1,16 +1,16 @@
 // Copyright (c) 2020-present, author: Zhengyang Liu (liuz@cs.utah.edu).
 // Distributed under the MIT license that can be found in the LICENSE file.
-#include "config.h"
-#include "enumerator.h"
-#include "codegen.h"
-#include "expr.h"
-#include "slice.h"
-#include "removal-slice.h"
-#include "util/random.h"
-#include "utils.h"
-#include "parse.h"
 #include "canonicalizer.h"
 #include "canonicalizers.h"
+#include "codegen.h"
+#include "config.h"
+#include "enumerator.h"
+#include "expr.h"
+#include "parse.h"
+#include "removal-slice.h"
+#include "slice.h"
+#include "util/random.h"
+#include "utils.h"
 
 #include "ir/instr.h"
 #include "llvm_util/llvm2alive.h"
@@ -52,9 +52,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <random>
-#include <unordered_map>
 #include <sstream>
+#include <unordered_map>
 #include <utility>
 
 using namespace std;
@@ -75,79 +76,77 @@ llvm::cl::opt<unsigned> slice_to(
     llvm::cl::desc("minotaur: timeout per slice"),
     llvm::cl::init(600), llvm::cl::value_desc("s"));
 
-llvm::cl::opt<bool> smt_verbose(
-    "minotaur-smt-verbose",
-    llvm::cl::desc("minotaur: SMT verbose mode"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool> smt_verbose("minotaur-smt-verbose",
+                                llvm::cl::desc("minotaur: SMT verbose mode"),
+                                llvm::cl::init(false));
 
-llvm::cl::opt<bool> enable_caching(
-    "minotaur-enable-caching",
-    llvm::cl::desc("minotaur: enable result caching"),
-    llvm::cl::init(true));
+llvm::cl::opt<bool>
+    enable_caching("minotaur-enable-caching",
+                   llvm::cl::desc("minotaur: enable result caching"),
+                   llvm::cl::init(true));
 
-llvm::cl::opt<bool> ignore_mca(
-    "minotaur-ignore-machine-cost",
-    llvm::cl::desc("minotaur: ignore llvm-mca cost model"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    ignore_mca("minotaur-ignore-machine-cost",
+               llvm::cl::desc("minotaur: ignore llvm-mca cost model"),
+               llvm::cl::init(false));
 
-llvm::cl::opt<bool> debug_enumerator(
-    "minotaur-debug-enumerator",
-    llvm::cl::desc("minotaur: enable enumerator debug output"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    debug_enumerator("minotaur-debug-enumerator",
+                     llvm::cl::desc("minotaur: enable enumerator debug output"),
+                     llvm::cl::init(false));
 
-llvm::cl::opt<bool> debug_slicer(
-    "minotaur-debug-slicer",
-    llvm::cl::desc("minotaur: enable slicer debug output"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    debug_slicer("minotaur-debug-slicer",
+                 llvm::cl::desc("minotaur: enable slicer debug output"),
+                 llvm::cl::init(false));
 
-llvm::cl::opt<bool> debug_tv(
-    "minotaur-debug-tv",
-    llvm::cl::desc("minotaur: enable alive2 debug output"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    debug_tv("minotaur-debug-tv",
+             llvm::cl::desc("minotaur: enable alive2 debug output"),
+             llvm::cl::init(false));
 
-llvm::cl::opt<bool> debug_codegen(
-    "minotaur-debug-codegen",
-    llvm::cl::desc("minotaur: enable alive2 debug output"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    debug_codegen("minotaur-debug-codegen",
+                  llvm::cl::desc("minotaur: enable alive2 debug output"),
+                  llvm::cl::init(false));
 
-llvm::cl::opt<bool> debug_parser(
-    "minotaur-debug-parser",
-    llvm::cl::desc("minotaur: enable alive2 debug output"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    debug_parser("minotaur-debug-parser",
+                 llvm::cl::desc("minotaur: enable alive2 debug output"),
+                 llvm::cl::init(false));
 
-llvm::cl::opt<unsigned> redis_port(
-    "minotaur-redis-port",
-    llvm::cl::desc("redis port number"),
-    llvm::cl::init(6379));
+llvm::cl::opt<unsigned> redis_port("minotaur-redis-port",
+                                   llvm::cl::desc("redis port number"),
+                                   llvm::cl::init(6379));
 
-llvm::cl::opt<bool> no_infer(
-    "minotaur-no-infer",
-    llvm::cl::desc("minotaur: do not run synthesizer"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool> no_infer("minotaur-no-infer",
+                             llvm::cl::desc("minotaur: do not run synthesizer"),
+                             llvm::cl::init(false));
 
-llvm::cl::opt<bool> no_slice(
-    "minotaur-no-slice",
-    llvm::cl::desc("minotaur: do not run slicer"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool> no_slice("minotaur-no-slice",
+                             llvm::cl::desc("minotaur: do not run slicer"),
+                             llvm::cl::init(false));
 
-llvm::cl::opt<bool> force_infer(
-    "minotaur-force-infer",
-    llvm::cl::desc("minotaur: force infer even if cache hits"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    force_infer("minotaur-force-infer",
+                llvm::cl::desc("minotaur: force infer even if cache hits"),
+                llvm::cl::init(false));
 
-llvm::cl::opt<bool> canon_all(
-    "minotaur-canon-all",
-    llvm::cl::desc("minotaur: enable canonicalization"),
-    llvm::cl::init(false));
+llvm::cl::opt<bool>
+    canon_all("minotaur-canon-all",
+              llvm::cl::desc("minotaur: enable canonicalization"),
+              llvm::cl::init(true));
 
 llvm::cl::opt<string> report_dir("minotaur-report-dir",
-  llvm::cl::desc("Save report to disk"), llvm::cl::value_desc("directory"));
+                                 llvm::cl::desc("Save report to disk"),
+                                 llvm::cl::value_desc("directory"));
 
 static bool dom_check(llvm::Value *V, DominatorTree &DT, llvm::Use &U) {
-  if (auto I = dyn_cast<Instruction> (V)) {
+  if (auto I = dyn_cast<Instruction>(V)) {
     for (auto &op : I->operands()) {
-      if (auto opI = dyn_cast<Instruction> (op)) {
-        if (!DT.dominates(opI, U)) return false;
+      if (auto opI = dyn_cast<Instruction>(op)) {
+        if (!DT.dominates(opI, U))
+          return false;
       }
     }
   }
@@ -155,44 +154,34 @@ static bool dom_check(llvm::Value *V, DominatorTree &DT, llvm::Use &U) {
 }
 
 struct debug {
-template<class T>
-debug &operator<<(const T &s)
-{
-  if (debug_enumerator || debug_slicer || debug_tv || debug_codegen)
-    minotaur::config::dbg()<<s;
-  return *this;
-}
+  template <class T> debug &operator<<(const T &s) {
+    if (debug_enumerator || debug_slicer || debug_tv || debug_codegen)
+      minotaur::config::dbg() << s;
+    return *this;
+  }
 };
 
-static optional<Rewrite>
-infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Parser &P) {
-  // Clone module and canonicalize
-  std::unique_ptr<llvm::Module> clonedModule;
-  ValueToValueMapTy valueMap;
-  Function *workingFunc = &F;
-  Instruction *workingInstr = I;
-  
-  minotaur::canonicalizer::Canonicalizer canonicalizer;
-  std::vector<ChangeSet> changeSets;
+static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
+                               Enumerator &EN, parse::Parser &P) {
+  llvm::Function *workF = &F;
+
+  canonicalizer::Canonicalizer canonicalizer;
+  std::vector<canonicalizer::ChangeSet> changeSets;
   if (config::canon_all) {
-    canonicalizer.addStep(std::make_unique<ArgumentOrderStep>());
-    
-    // Step 1: Clone Module
-    clonedModule = CloneModule(*F.getParent(), valueMap);
-    
-    // Step 2: Get the cloned function and instruction
-    workingFunc = cast<Function>(valueMap[&F]);
-    workingInstr = cast<Instruction>(valueMap[I]);
-    
-    // Step 3: Canonicalize ClonedFunc
-    changeSets = canonicalizer.canonicalize(*workingFunc);
+    canonicalizer.addStep(
+        std::make_unique<canonicalizer::UnusedArgumentStep>());
+    // canonicalizer.addStep(std::make_unique<canonicalizer::ArgumentOrderStep>());
+    // canonicalizer.addStep(std::make_unique<canonicalizer::DebugPrintStep>());
+
+    changeSets = canonicalizer.canonicalize(workF, I);
+    workF = changeSets.back().stepFunc;
+    I = changeSets.back().stepInst;
   }
 
-  // Step 4: Generate bytecode key from canonical form
   string bytecode;
   llvm::raw_string_ostream bs(bytecode);
-  //WriteBitcodeToFile(*workingFunc->getParent(), bs);
-  workingFunc->getParent()->print(bs, nullptr);
+  // WriteBitcodeToFile(*workF->getParent(), bs);
+  workF->getParent()->print(bs, nullptr);
   bs.flush();
 
   vector<Rewrite> RHSs;
@@ -204,34 +193,24 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
   // 2. force_infer: force synthesizer even if cache hits
   // 3. normal mode: run synthesizer if cache miss
 
-  // Create parser with the working function (cloned if canonicalization enabled)
-  parse::Parser workingParser(*workingFunc);
-
-  // check cache only in normal mode (per sequence diagram line 16)
+  // check cache only in normal mode
   if (enable_caching && !force_infer && !no_infer) {
     std::string rewrite;
 
     if (minotaur::hGet(bytecode.c_str(), bytecode.size(), rewrite, ctx)) {
       if (rewrite == "<no-sol>") {
         debug() << "[online] cache matched, but no solution found in "
-                    "previous run, skipping function: "
-                << F.getName() << "\n";
-        if (config::canon_all) {
-          // Decanonicalize the cloned function before discarding
-          canonicalizer.decanonicalize(*workingFunc, changeSets);
-        }
+                   "previous run, skipping function: "
+                << workF->getName() << "\n";
         return nullopt;
       } else {
         debug() << "[online] cache matched, using previous solution for "
-                    "function: "
-                << F.getName() << "\n";
-        // Parse using cloned/canonical function context
-        RHSs = workingParser.parse(*workingFunc, rewrite);
+                   "function: "
+                << workF->getName() << "\n";
+
+        RHSs = P.parse(*workF, rewrite);
         if (RHSs.empty()) {
           debug() << "[online] failed to parse cached solution\n";
-          if (config::canon_all) {
-            canonicalizer.decanonicalize(*workingFunc, changeSets);
-          }
           return nullopt;
         }
         debug() << *RHSs[0].I << "\n";
@@ -240,29 +219,22 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
     }
   }
 
-
   if (no_infer) {
-  // in no_infer mode, we write no-sol and return
+    // in no_infer mode, we write no-sol and return
     if (enable_caching) {
-      hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
+      hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, workF->getName());
     }
     debug() << "[online] skipping synthesizer\n";
-    if (config::canon_all) {
-      canonicalizer.decanonicalize(*workingFunc, changeSets);
-    }
     return nullopt;
   } else if (!from_cache) {
     // in force_infer mode, as from_cache is always false, we run synthesizer
     // in normal mode, we run synthesizer only when cache misses
-    // Synthesizer works on canonical function
-    debug() << "[online] working on function:\n" << *workingFunc;
-    RHSs = EN.solve(*workingFunc, workingInstr);
+    debug() << "[online] working on function:\n" << *workF;
+    RHSs = EN.solve(*workF, I);
     if (RHSs.empty()) {
       if (enable_caching)
-        hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
-      if (config::canon_all) {
-        canonicalizer.decanonicalize(*workingFunc, changeSets);
-      }
+        hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx,
+                       workF->getName());
       return nullopt;
     }
   }
@@ -272,30 +244,25 @@ infer(Function &F, Instruction *I, redisContext *ctx, Enumerator &EN, parse::Par
 
   // write back to cache
   if (!from_cache && enable_caching) {
-    debug()<<"[online] caching solution\n";
+    debug() << "[online] caching solution\n";
     string rewrite;
     raw_string_ostream rs(rewrite);
     R.I->print(rs);
     rs.flush();
-    hSetRewrite(bytecode.c_str(), bytecode.size(),
-                "", 0,
-                rewrite, ctx, R.CostAfter, R.CostBefore, F.getName());
+    hSetRewrite(bytecode.c_str(), bytecode.size(), "", 0, rewrite, ctx,
+                R.CostAfter, R.CostBefore, workF->getName());
   }
 
-  // adaptRewrite: Map rewrite from cloned/canonical function to original
   if (config::canon_all) {
-    canonicalizer.decanonicalize(*workingFunc, changeSets);
-    // TODO: When we implement actual canonicalization (like ArgumentOrderCanonicalizationStep),
-    // we need to map the rewrite from the canonical function context to the original
-    // function context using the inverse permutation stored in metadata or associate state
+    R = canonicalizer.decanonicalize(R, changeSets);
   }
 
   return R;
 }
 
-static bool
-optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
-                  TargetLibraryInfoWrapperPass &TLI) {
+static bool optimize_function(llvm::Function &F, LoopInfo &LI,
+                              DominatorTree &DT,
+                              TargetLibraryInfoWrapperPass &TLI) {
   // set up debug output
   raw_ostream *out_file = &errs();
   if (!report_dir.empty()) {
@@ -328,7 +295,8 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
   config::set_debug(*out_file);
 
   debug() << "[online] minotaur version " << config::minotaur_version << " "
-          << "working on source: " << F.getParent()->getSourceFileName() << "\n";
+          << "working on source: " << F.getParent()->getSourceFileName()
+          << "\n";
 
   debug() << "[online] working on function: " << F.getName() << "\n";
   debug() << *F.getParent() << "\n";
@@ -343,7 +311,7 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
   config::slice_to = slice_to;
   config::canon_all = canon_all;
   smt::solver_print_queries(smt_verbose);
-  
+
   if (config::canon_all) {
     debug() << "[online] Canonicalization is enabled\n";
   }
@@ -360,7 +328,6 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
   if (no_slice) {
     // in this mode we assume only one return point, we do not run slicer,
     // we check if return value can be optimized
-
 
     std::unique_ptr<llvm::Module> m;
     ValueToValueMapTy vv;
@@ -388,7 +355,6 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
 
     Instruction *retI = dyn_cast<Instruction>(ret->getReturnValue());
 
-
     if (!retI) {
       debug() << "[online] return value is not an instruction, skipping\n";
       goto final;
@@ -401,7 +367,7 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
       goto final;
     }
 
-    unordered_set<llvm::Function*> IntrinDecls;
+    unordered_set<llvm::Function *> IntrinDecls;
     ValueToValueMapTy vmap;
     auto *V = LLVMGen(ret, IntrinDecls).codeGen(R->I, vmap);
     V = llvm::IRBuilder<>(ret).CreateBitCast(V, retI->getType());
@@ -428,9 +394,9 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
         if (!R.has_value())
           continue;
 
-        unordered_set<llvm::Function*> IntrinDecls;
+        unordered_set<llvm::Function *> IntrinDecls;
         Instruction *insertpt = I.getNextNode();
-        while(isa<PHINode>(insertpt)) {
+        while (isa<PHINode>(insertpt)) {
           insertpt = insertpt->getNextNode();
         }
 
@@ -438,13 +404,14 @@ optimize_function(llvm::Function &F, LoopInfo &LI, DominatorTree &DT,
         V = llvm::IRBuilder<>(insertpt).CreateBitCast(V, I.getType());
 
         I.replaceUsesWithIf(V, [&changed, &V, &DT](Use &U) {
-          if(dom_check(V, DT, U)) {
+          if (dom_check(V, DT, U)) {
             changed = true;
             return true;
           }
           return false;
         });
-        debug() << "[online] optimized function step:" << *F.getParent() << "\n";
+        debug() << "[online] optimized function step:" << *F.getParent()
+                << "\n";
       }
     }
   }
@@ -480,10 +447,8 @@ struct SuperoptimizerLegacyPass final : public llvm::FunctionPass {
   SuperoptimizerLegacyPass() : FunctionPass(ID) {}
 
   bool runOnFunction(llvm::Function &F) override {
-    LoopInfo &LI =
-      getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
-    DominatorTree &DT =
-      getAnalysis<DominatorTreeWrapperPass>().getDomTree();
+    LoopInfo &LI = getAnalysis<LoopInfoWrapperPass>().getLoopInfo();
+    DominatorTree &DT = getAnalysis<DominatorTreeWrapperPass>().getDomTree();
     /*MemoryDependenceResults &MD =
       getAnalysis<MemoryDependenceWrapperPass>().getMemDep();*/
 
@@ -520,7 +485,7 @@ namespace {
 
 struct SuperoptimizerPass : PassInfoMixin<SuperoptimizerPass> {
   PreservedAnalyses run(llvm::Function &F, FunctionAnalysisManager &FAM) {
-    //TargetLibraryInfo &TLI = FAM.getResult<TargetLibraryAnalysis>(F);
+    // TargetLibraryInfo &TLI = FAM.getResult<TargetLibraryAnalysis>(F);
     PreservedAnalyses PA;
     PA.preserveSet<CFGAnalyses>();
 
@@ -536,7 +501,7 @@ struct SuperoptimizerPass : PassInfoMixin<SuperoptimizerPass> {
   }
 };
 
-}// namespace
+} // namespace
 
 bool pipelineParsingCallback(StringRef Name, FunctionPassManager &FPM,
                              ArrayRef<PassBuilder::PipelineElement>) {
