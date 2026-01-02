@@ -23,17 +23,22 @@
 
 #include "llvm/ADT/Any.h"
 #include "llvm/Analysis/DominanceFrontier.h"
+#include "llvm/Analysis/LazyCallGraph.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/PassManager.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Pass.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Plugins/PassPlugin.h"
@@ -49,6 +54,7 @@
 
 #include "hiredis.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -66,15 +72,15 @@ namespace fs = std::filesystem;
 
 namespace {
 
-llvm::cl::opt<unsigned> smt_to(
-    "minotaur-query-to",
-    llvm::cl::desc("minotaur: timeout for SMT queries"),
-    llvm::cl::init(120), llvm::cl::value_desc("s"));
+llvm::cl::opt<unsigned>
+    smt_to("minotaur-query-to",
+           llvm::cl::desc("minotaur: timeout for SMT queries"),
+           llvm::cl::init(120), llvm::cl::value_desc("s"));
 
-llvm::cl::opt<unsigned> slice_to(
-    "minotaur-slice-to",
-    llvm::cl::desc("minotaur: timeout per slice"),
-    llvm::cl::init(600), llvm::cl::value_desc("s"));
+llvm::cl::opt<unsigned> slice_to("minotaur-slice-to",
+                                 llvm::cl::desc("minotaur: timeout per slice"),
+                                 llvm::cl::init(600),
+                                 llvm::cl::value_desc("s"));
 
 llvm::cl::opt<bool> smt_verbose("minotaur-smt-verbose",
                                 llvm::cl::desc("minotaur: SMT verbose mode"),
@@ -133,7 +139,7 @@ llvm::cl::opt<bool>
                 llvm::cl::init(false));
 
 llvm::cl::opt<bool>
-    canon_all("minotaur-canon-all",
+    canon_all("minotaur-enable-canon",
               llvm::cl::desc("minotaur: enable canonicalization"),
               llvm::cl::init(true));
 
@@ -163,25 +169,10 @@ struct debug {
 
 static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
                                Enumerator &EN, parse::Parser &P) {
-  llvm::Function *workF = &F;
-
-  canonicalizer::Canonicalizer canonicalizer;
-  std::vector<canonicalizer::ChangeSet> changeSets;
-  if (config::canon_all) {
-    canonicalizer.addStep(
-        std::make_unique<canonicalizer::UnusedArgumentStep>());
-    // canonicalizer.addStep(std::make_unique<canonicalizer::ArgumentOrderStep>());
-    // canonicalizer.addStep(std::make_unique<canonicalizer::DebugPrintStep>());
-
-    changeSets = canonicalizer.canonicalize(workF, I);
-    workF = changeSets.back().stepFunc;
-    I = changeSets.back().stepInst;
-  }
-
   string bytecode;
   llvm::raw_string_ostream bs(bytecode);
-  // WriteBitcodeToFile(*workF->getParent(), bs);
-  workF->getParent()->print(bs, nullptr);
+  // WriteBitcodeToFile(*F.getParent(), bs);
+  F.getParent()->print(bs, nullptr);
   bs.flush();
 
   vector<Rewrite> RHSs;
@@ -201,14 +192,14 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
       if (rewrite == "<no-sol>") {
         debug() << "[online] cache matched, but no solution found in "
                    "previous run, skipping function: "
-                << workF->getName() << "\n";
+                << F.getName() << "\n";
         return nullopt;
       } else {
         debug() << "[online] cache matched, using previous solution for "
                    "function: "
-                << workF->getName() << "\n";
+                << F.getName() << "\n";
 
-        RHSs = P.parse(*workF, rewrite);
+        RHSs = P.parse(F, rewrite);
         if (RHSs.empty()) {
           debug() << "[online] failed to parse cached solution\n";
           return nullopt;
@@ -222,19 +213,18 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
   if (no_infer) {
     // in no_infer mode, we write no-sol and return
     if (enable_caching) {
-      hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, workF->getName());
+      hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
     }
     debug() << "[online] skipping synthesizer\n";
     return nullopt;
   } else if (!from_cache) {
     // in force_infer mode, as from_cache is always false, we run synthesizer
     // in normal mode, we run synthesizer only when cache misses
-    debug() << "[online] working on function:\n" << *workF;
-    RHSs = EN.solve(*workF, I);
+    debug() << "[online] working on function:\n" << F;
+    RHSs = EN.solve(F, I);
     if (RHSs.empty()) {
       if (enable_caching)
-        hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx,
-                       workF->getName());
+        hSetNoSolution(bytecode.c_str(), bytecode.size(), ctx, F.getName());
       return nullopt;
     }
   }
@@ -250,11 +240,7 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
     R.I->print(rs);
     rs.flush();
     hSetRewrite(bytecode.c_str(), bytecode.size(), "", 0, rewrite, ctx,
-                R.CostAfter, R.CostBefore, workF->getName());
-  }
-
-  if (config::canon_all) {
-    R = canonicalizer.decanonicalize(R, changeSets);
+                R.CostAfter, R.CostBefore, F.getName());
   }
 
   return R;
@@ -387,12 +373,33 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
         if (!NewF.has_value())
           continue;
 
+        canonicalizer::Canonicalizer canonicalizer;
+        std::vector<canonicalizer::ChangeSet> changes;
+        if (config::canon_all) {
+          canonicalizer.addStep(
+              std::make_unique<canonicalizer::UnusedArgumentStep>());
+          canonicalizer.addStep(
+              std::make_unique<canonicalizer::ArgumentOrderStep>());
+          canonicalizer.addStep(
+              std::make_unique<canonicalizer::StrictComparisonStep>());
+
+          changes = canonicalizer.canonicalize(&NewF->first.get(), NewF->second,
+                                               S.getValueMap());
+
+          NewF->first = *changes.back().stepFunc;
+          NewF->second = changes.back().I;
+        }
+
         Enumerator EN;
         parse::Parser P(NewF->first);
         auto R = infer(NewF->first, NewF->second, ctx, EN, P);
 
         if (!R.has_value())
           continue;
+
+        if (config::canon_all) {
+          canonicalizer.decanonicalize(R.value(), changes);
+        }
 
         unordered_set<llvm::Function *> IntrinDecls;
         Instruction *insertpt = I.getNextNode();
@@ -410,8 +417,6 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
           }
           return false;
         });
-        debug() << "[online] optimized function step:" << *F.getParent()
-                << "\n";
       }
     }
   }

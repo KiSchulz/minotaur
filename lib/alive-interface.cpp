@@ -139,11 +139,6 @@ AliveEngine::find_model(Transform &t,
     if (refines.isFalse())
       return std::move(refines);
 
-    // std::cerr << "[AE] pre_src:\n" << pre_src << "\n";
-    // std::cerr << "[AE] pre_tgt:\n" << pre_tgt << "\n";
-    // std::cerr << "[AE] refines:\n" << refines << "\n";
-    // std::cerr << "[AE] refines.simplify():\n" << refines.simplify() << "\n";
-
     auto fml = pre_tgt && pre_src.implies(refines);
     return axioms_expr && preprocess(t, qvars, uvars, std::move(fml));
   };
@@ -288,11 +283,9 @@ AliveEngine::constantSynthesis(llvm::Function &src, llvm::Function &tgt,
   std::unordered_map<const IR::Value*, smt::expr> result;
   Errors errs = find_model(t, result);
 
-  std::cerr << "[AE] errs.hasWarnings(): " << errs.hasWarnings() << "\n";
   bool ret(errs);
   if (ret) {
     *debug << "unable to find constants: \n" << errs;
-    std::cerr << "[AE] errs:\n" << errs << "\n";
     return false;
   }
 
