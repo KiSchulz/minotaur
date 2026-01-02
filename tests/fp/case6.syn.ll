@@ -1,4 +1,4 @@
-; CHECK: rewrite: (fcmp_oeq (var float %__n1) (reservedconst float |float 0.000000e+00|) b1)
+; CHECK: fcmp oeq float %0, 0.000000e+00
 define i1 @src(float %0) {
 if.end192:
   %1 = fcmp oge float %0, 0.000000e+00
