@@ -46,6 +46,14 @@ static cl::opt<bool> opt_debug(
     "dbg", cl::desc("Alive: print debugging info"),
     cl::cat(minotaur_cs), cl::init(false));
 
+static cl::opt<bool> opt_disable_undef("disable-undef-input",
+    cl::init(true), cl::cat(minotaur_cs),
+    cl::desc("Alive: Assume inputs are not undef (default=true)"));
+
+static cl::opt<bool> opt_disable_poison("disable-poison-input",
+    cl::init(true), cl::cat(minotaur_cs),
+    cl::desc("Alive: Assume inputs are not poison (default=true)"));
+
 static cl::opt<bool> opt_smt_verbose(
     "smt-verbose", cl::desc("Alive: SMT verbose mode"),
     cl::cat(minotaur_cs), cl::init(false));
@@ -99,6 +107,8 @@ int main(int argc, char **argv) {
 
   smt::set_query_timeout(to_string(opt_smt_to));
   smt::solver_print_queries(opt_smt_verbose);
+  config::disable_undef_input = opt_disable_undef;
+  config::disable_poison_input = opt_disable_poison;
   config::debug = opt_debug;
 
   auto M = openInputFile(Context, opt_file);
@@ -127,7 +137,7 @@ int main(int argc, char **argv) {
 
   minotaur::config::debug_tv = true;
   unordered_map<Argument*, Constant*> constMap;
-  minotaur::AliveEngine AE(TLI);
+  minotaur::AliveEngine AE(TLI, true);
   try {
     AE.constantSynthesis(*SRC, *TGT, constMap);
   } catch (AliveException e) {
