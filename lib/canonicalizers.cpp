@@ -121,9 +121,9 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
 
   auto VMap = std::make_unique<llvm::ValueToValueMapTy>();
   llvm::Function::arg_iterator canonArgIt = canonicalizedF->arg_begin();
-  for (unsigned argNo : originalOrder) {
-    llvm::Argument *arg = F->getArg(argNo);
-    canonArgIt->setName(arg->getName());
+  for (unsigned i = 0; i < originalOrder.size(); i++) {
+    llvm::Argument *arg = F->getArg(originalOrder[i]);
+    canonArgIt->setName(F->getArg(i)->getName());
     (*VMap)[arg] = &*canonArgIt++;
   }
 
