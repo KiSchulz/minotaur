@@ -82,36 +82,16 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
   }
 
   std::map<std::string, std::vector<llvm::Argument *>> typeToArgs;
-  for (const llvm::BasicBlock &BB : *F) {
-    for (const llvm::Instruction &I : BB) {
-      for (llvm::Value *op : I.operands()) {
-        if (llvm::Argument *arg = llvm::dyn_cast<llvm::Argument>(op)) {
-          std::vector<llvm::Argument *> &canonArgs =
-              typeToArgs[getTypeKey(arg->getType())];
-          if (std::find(canonArgs.begin(), canonArgs.end(), arg) ==
-              canonArgs.end()) {
-            canonArgs.push_back(arg);
-          }
-        }
-      }
-    }
+  for (llvm::Argument &arg : F->args()) {
+    typeToArgs[getTypeKey(arg.getType())].push_back(&arg);
   }
-
+  
   std::vector<unsigned> originalOrder;
   std::vector<llvm::Type *> argTypes;
   for (auto &[type, canonArgs] : typeToArgs) {
     for (llvm::Argument *arg : canonArgs) {
       argTypes.push_back(typeNameMap[type]);
       originalOrder.push_back(arg->getArgNo());
-    }
-  }
-
-  // Add any arguments not used in the body to the end of the argument list
-  for (const llvm::Argument &arg : F->args()) {
-    if (std::find(originalOrder.begin(), originalOrder.end(), arg.getArgNo()) ==
-        originalOrder.end()) {
-      argTypes.push_back(arg.getType());
-      originalOrder.push_back(arg.getArgNo());
     }
   }
 
@@ -123,7 +103,7 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
   llvm::Function::arg_iterator canonArgIt = canonicalizedF->arg_begin();
   for (unsigned i = 0; i < originalOrder.size(); i++) {
     llvm::Argument *arg = F->getArg(originalOrder[i]);
-    canonArgIt->setName(F->getArg(i)->getName());
+    canonArgIt->setName("arg" + std::to_string(i));
     (*VMap)[arg] = &*canonArgIt++;
   }
 
