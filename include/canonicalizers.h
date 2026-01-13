@@ -47,4 +47,13 @@ public:
   }
 };
 
+class LessThanCanonicalizationStep : public CanonicalizationStep {
+public:
+  ChangeSet canonicalize(llvm::Function *F, llvm::Instruction *I) override;
+  Rewrite decanonicalize(const Rewrite &R, const ChangeSet &cs) override;
+  std::string getName() const override {
+    return "LessThanCanonicalizationStep";
+  }
+};
+
 } // namespace minotaur::canonicalizer

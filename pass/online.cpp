@@ -381,6 +381,8 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
           canonicalizer.addStep(
               std::make_unique<canonicalizer::ArgumentOrderStep>());
           canonicalizer.addStep(
+              std::make_unique<canonicalizer::LessThanCanonicalizationStep>());
+          canonicalizer.addStep(
               std::make_unique<canonicalizer::StrictComparisonStep>());
 
           changes = canonicalizer.canonicalize(&NewF->first.get(), NewF->second,
