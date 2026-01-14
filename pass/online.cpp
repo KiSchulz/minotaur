@@ -147,7 +147,7 @@ llvm::cl::opt<string>
     canon_steps("minotaur-canon-steps",
                 llvm::cl::desc("minotaur: comma seperated list op canonization "
                                "steps to use or all if all should be used"),
-                llvm::cl::value_desc("all"));
+                llvm::cl::init("all"));
 
 llvm::cl::opt<string> report_dir("minotaur-report-dir",
                                  llvm::cl::desc("Save report to disk"),
@@ -412,8 +412,10 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
           changes = canonicalizer.canonicalize(&NewF->first.get(), NewF->second,
                                                S.getValueMap());
 
-          NewF->first = *changes.back().stepFunc;
-          NewF->second = changes.back().I;
+          if (!changes.empty()) {
+            NewF->first = *changes.back().stepFunc;
+            NewF->second = changes.back().I;
+          }
         }
 
         Enumerator EN;
