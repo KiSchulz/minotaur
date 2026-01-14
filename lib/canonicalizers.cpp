@@ -372,3 +372,83 @@ minotaur::Rewrite StrictComparisonStep::decanonicalize(const Rewrite &R,
                                                        const ChangeSet &cs) {
   return R;
 }
+
+ChangeSet LessThanCanonicalizationStep::canonicalize(llvm::Function *F,
+                                                      llvm::Instruction *I) {
+  llvm::Function *CanonicalizedF =
+      llvm::Function::Create(F->getFunctionType(), F->getLinkage(),
+                             F->getName() + "." + getName(), F->getParent());
+
+  auto VMap = std::make_unique<llvm::ValueToValueMapTy>();
+  for (auto I = F->arg_begin(), CI = CanonicalizedF->arg_begin();
+       I != F->arg_end(); I++, CI++) {
+    CI->setName(I->getName());
+    (*VMap)[&*I] = &*CI;
+  }
+
+  llvm::SmallVector<llvm::ReturnInst *, 8> Returns;
+  llvm::CloneFunctionInto(CanonicalizedF, F, *VMap,
+                          llvm::CloneFunctionChangeType::LocalChangesOnly,
+                          Returns);
+
+  for (auto &BB : *F) {
+    for (auto &Inst : BB) {
+      auto *Cmp = llvm::dyn_cast<llvm::CmpInst>(&Inst);
+      if (!Cmp) {
+        continue;
+      }
+
+      llvm::CmpInst::Predicate Pred = Cmp->getPredicate();
+      llvm::CmpInst::Predicate SwappedPred = llvm::CmpInst::BAD_ICMP_PREDICATE;
+
+      using P = llvm::CmpInst::Predicate;
+      switch (Pred) {
+      case P::ICMP_SGT:
+        SwappedPred = P::ICMP_SLT;
+        break;
+      case P::ICMP_UGT:
+        SwappedPred = P::ICMP_ULT;
+        break;
+      case P::ICMP_SGE:
+        SwappedPred = P::ICMP_SLE;
+        break;
+      case P::ICMP_UGE:
+        SwappedPred = P::ICMP_ULE;
+        break;
+      case P::FCMP_OGT:
+        SwappedPred = P::FCMP_OLT;
+        break;
+      case P::FCMP_UGT:
+        SwappedPred = P::FCMP_ULT;
+        break;
+      case P::FCMP_OGE:
+        SwappedPred = P::FCMP_OLE;
+        break;
+      case P::FCMP_UGE:
+        SwappedPred = P::FCMP_ULE;
+        break;
+      default:
+        // Not a gt comparison
+        continue;
+      }
+
+      // Clone and swap
+      auto *ClonedCmp = llvm::cast<llvm::CmpInst>((*VMap)[Cmp]);
+      llvm::Value *Op0 = ClonedCmp->getOperand(0);
+      llvm::Value *Op1 = ClonedCmp->getOperand(1);
+      
+      ClonedCmp->setOperand(0, Op1);
+      ClonedCmp->setOperand(1, Op0);
+      ClonedCmp->setPredicate(SwappedPred);
+    }
+  }
+
+  auto newI = llvm::cast<llvm::Instruction>((*VMap)[I]);
+  return ChangeSet{CanonicalizedF, newI, std::move(VMap)};
+}
+
+minotaur::Rewrite
+LessThanCanonicalizationStep::decanonicalize(const Rewrite &R,
+                                             const ChangeSet &cs) {
+  return R;
+}
