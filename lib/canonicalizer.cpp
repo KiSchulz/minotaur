@@ -1,8 +1,8 @@
 #include "canonicalizer.h"
+#include "canonicalizers.h"
 #include "expr.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
-#include <iostream>
 
 using namespace minotaur::canonicalizer;
 
@@ -53,11 +53,11 @@ void Canonicalizer::cleanModule(llvm::Function *F) {
       F.eraseFromParent();
     }
   }
+}
 
-  std::string bc;
-  llvm::raw_string_ostream bs(bc);
-  workM->print(bs, nullptr);
-  std::cerr << bc << std::endl;
+bool Canonicalizer::shouldRunStep(const CanonicalizationStep &step) {
+  return steps_config.find("all") != std::string::npos ||
+         steps_config.find(step.getName()) != std::string::npos;
 }
 
 std::vector<ChangeSet>
@@ -67,6 +67,10 @@ Canonicalizer::canonicalize(llvm::Function *F, llvm::Instruction *I,
   llvm::Instruction *currentI = I;
   std::vector<ChangeSet> changeSets;
   for (const auto &step : steps) {
+    if (!shouldRunStep(*step)) {
+      continue;
+    }
+
     changeSets.push_back(step->canonicalize(currentF, currentI));
 
     currentF = changeSets.back().stepFunc;
@@ -88,7 +92,20 @@ Canonicalizer::decanonicalize(const Rewrite &R,
   // Apply decanonicalization in reverse order
   int changeIndex = changes.size() - 1;
   for (auto it = steps.rbegin(); it != steps.rend(); ++it) {
+    if (!shouldRunStep(**it)) {
+      continue;
+    }
+
     ret = (*it)->decanonicalize(ret, changes[changeIndex--]);
   }
   return ret;
+}
+
+Canonicalizer::Canonicalizer(std::string_view steps_config)
+    : steps_config(steps_config) {
+  addStep(std::make_unique<UnusedArgumentStep>());
+  addStep(std::make_unique<ArgumentOrderStep>());
+  addStep(std::make_unique<ArgumentRenamingStep>());
+  addStep(std::make_unique<LeqLtComparisonStep>());
+  addStep(std::make_unique<StrictComparisonStep>());
 }

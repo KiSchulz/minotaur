@@ -16,9 +16,7 @@
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include <algorithm>
 #include <cassert>
-#include <iostream>
 #include <memory>
-#include <type_traits>
 #include <vector>
 
 using namespace minotaur::canonicalizer;
@@ -81,6 +79,7 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
     typeNameMap[getTypeKey(arg.getType())] = arg.getType();
   }
 
+  // add all arguments in the order they were used in the body
   std::map<std::string, std::vector<llvm::Argument *>> typeToArgs;
   for (const llvm::BasicBlock &BB : *F) {
     for (const llvm::Instruction &I : BB) {
@@ -97,21 +96,23 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
     }
   }
 
-  std::vector<unsigned> originalOrder;
+  // element i stores the position of the argument in the original function
+  // signature
+  std::vector<unsigned> argIdxMap;
   std::vector<llvm::Type *> argTypes;
   for (auto &[type, canonArgs] : typeToArgs) {
     for (llvm::Argument *arg : canonArgs) {
       argTypes.push_back(typeNameMap[type]);
-      originalOrder.push_back(arg->getArgNo());
+      argIdxMap.push_back(arg->getArgNo());
     }
   }
 
   // Add any arguments not used in the body to the end of the argument list
   for (const llvm::Argument &arg : F->args()) {
-    if (std::find(originalOrder.begin(), originalOrder.end(), arg.getArgNo()) ==
-        originalOrder.end()) {
+    if (std::find(argIdxMap.begin(), argIdxMap.end(), arg.getArgNo()) ==
+        argIdxMap.end()) {
       argTypes.push_back(arg.getType());
-      originalOrder.push_back(arg.getArgNo());
+      argIdxMap.push_back(arg.getArgNo());
     }
   }
 
@@ -121,7 +122,7 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
 
   auto VMap = std::make_unique<llvm::ValueToValueMapTy>();
   llvm::Function::arg_iterator canonArgIt = canonicalizedF->arg_begin();
-  for (unsigned argNo : originalOrder) {
+  for (unsigned argNo : argIdxMap) {
     llvm::Argument *arg = F->getArg(argNo);
     canonArgIt->setName(arg->getName());
     (*VMap)[arg] = &*canonArgIt++;
@@ -138,6 +139,84 @@ ChangeSet ArgumentOrderStep::canonicalize(llvm::Function *F,
 
 minotaur::Rewrite ArgumentOrderStep::decanonicalize(const Rewrite &R,
                                                     const ChangeSet &cs) {
+  return R;
+}
+
+ChangeSet ArgumentRenamingStep::canonicalize(llvm::Function *F,
+                                             llvm::Instruction *I) {
+  llvm::Function *CanonicalizedF =
+      llvm::Function::Create(F->getFunctionType(), F->getLinkage(),
+                             F->getName() + "." + getName(), F->getParent());
+
+  auto VMap = std::make_unique<llvm::ValueToValueMapTy>();
+  for (auto I = F->arg_begin(), CI = CanonicalizedF->arg_begin();
+       I != F->arg_end(); I++, CI++) {
+    CI->setName(I->getName());
+    (*VMap)[&*I] = &*CI;
+  }
+
+  llvm::SmallVector<llvm::ReturnInst *, 8> Returns;
+  llvm::CloneFunctionInto(CanonicalizedF, F, *VMap,
+                          llvm::CloneFunctionChangeType::LocalChangesOnly,
+                          Returns);
+
+  for (auto &arg : CanonicalizedF->args()) {
+    arg.setName("__canonArg");
+  }
+
+  auto newI = llvm::cast<llvm::Instruction>((*VMap)[I]);
+  return ChangeSet{CanonicalizedF, newI, std::move(VMap)};
+}
+
+minotaur::Rewrite ArgumentRenamingStep::decanonicalize(const Rewrite &R,
+                                                       const ChangeSet &cs) {
+  return R;
+}
+
+ChangeSet LeqLtComparisonStep::canonicalize(llvm::Function *F,
+                                            llvm::Instruction *I) {
+  llvm::Function *CanonicalizedF =
+      llvm::Function::Create(F->getFunctionType(), F->getLinkage(),
+                             F->getName() + "." + getName(), F->getParent());
+
+  auto VMap = std::make_unique<llvm::ValueToValueMapTy>();
+  for (auto I = F->arg_begin(), CI = CanonicalizedF->arg_begin();
+       I != F->arg_end(); I++, CI++) {
+    CI->setName(I->getName());
+    (*VMap)[&*I] = &*CI;
+  }
+
+  llvm::SmallVector<llvm::ReturnInst *, 8> Returns;
+  llvm::CloneFunctionInto(CanonicalizedF, F, *VMap,
+                          llvm::CloneFunctionChangeType::LocalChangesOnly,
+                          Returns);
+
+  for (auto &BB : *CanonicalizedF) {
+    for (auto &Inst : BB) {
+      if (auto *Cmp = llvm::dyn_cast<llvm::CmpInst>(&Inst)) {
+        using llvmP = llvm::CmpInst::Predicate;
+        const std::set<llvmP> GreaterPreds{
+          // floating point predicates
+          llvmP::FCMP_OGE, llvmP::FCMP_OGT,
+          llvmP::FCMP_UGE, llvmP::FCMP_UGT,
+          // interger predicates
+          llvmP::ICMP_UGE, llvmP::ICMP_UGT,
+          llvmP::ICMP_SGE, llvmP::ICMP_SGT,
+        };
+        if (!GreaterPreds.contains(Cmp->getPredicate())) {
+          continue;
+        }
+       Cmp->swapOperands();
+      }
+    }
+  }
+
+  auto newI = llvm::cast<llvm::Instruction>((*VMap)[I]);
+  return ChangeSet{CanonicalizedF, newI, std::move(VMap)};
+}
+
+minotaur::Rewrite LeqLtComparisonStep::decanonicalize(const Rewrite &R,
+                                                      const ChangeSet &cs) {
   return R;
 }
 
@@ -261,7 +340,8 @@ ChangeSet StrictComparisonStep::canonicalize(llvm::Function *F,
 
         auto newConst = llvm::ConstantInt::get(Const->getType(), newVal);
         llvm::cast<llvm::CmpInst>((*VMap)[Cmp])->setPredicate(newPred);
-        llvm::cast<llvm::CmpInst>((*VMap)[Cmp])->setOperand(ConstOpIdx, newConst);
+        llvm::cast<llvm::CmpInst>((*VMap)[Cmp])
+            ->setOperand(ConstOpIdx, newConst);
       } else if (auto *Cmp = llvm::dyn_cast<llvm::FCmpInst>(&Inst)) {
         auto *Const =
             llvm::dyn_cast<llvm::ConstantFP>(Inst.getOperand(ConstOpIdx));
@@ -274,7 +354,8 @@ ChangeSet StrictComparisonStep::canonicalize(llvm::Function *F,
 
         auto newConst = llvm::ConstantFP::get(Const->getType(), newVal);
         llvm::cast<llvm::CmpInst>((*VMap)[Cmp])->setPredicate(newPred);
-        llvm::cast<llvm::CmpInst>((*VMap)[Cmp])->setOperand(ConstOpIdx, newConst);
+        llvm::cast<llvm::CmpInst>((*VMap)[Cmp])
+            ->setOperand(ConstOpIdx, newConst);
       }
     }
   }

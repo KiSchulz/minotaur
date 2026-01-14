@@ -3,7 +3,6 @@
 #include "expr.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
-#include <any>
 #include <memory>
 #include <string>
 #include <vector>
@@ -29,12 +28,16 @@ public:
 };
 
 class Canonicalizer {
+  std::string steps_config;
   std::vector<std::unique_ptr<CanonicalizationStep>> steps;
 
   void updateVMap(llvm::ValueToValueMapTy &VMap, const ChangeSet &change);
   void cleanModule(llvm::Function *F);
+  bool shouldRunStep(const CanonicalizationStep &step);
 
 public:
+  explicit Canonicalizer(std::string_view steps_config);
+  
   void addStep(std::unique_ptr<CanonicalizationStep> step);
   std::vector<ChangeSet> canonicalize(llvm::Function *F, llvm::Instruction *I,
                                       llvm::ValueToValueMapTy &VMap);

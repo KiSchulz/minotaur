@@ -12,16 +12,12 @@
 #include "util/random.h"
 #include "utils.h"
 
-#include "ir/instr.h"
 #include "llvm_util/llvm2alive.h"
 #include "smt/smt.h"
 #include "smt/solver.h"
-#include "tools/transform.h"
-#include "util/compiler.h"
-#include "util/config.h"
-#include "util/version.h"
 
-#include "llvm/ADT/Any.h"
+#include "llvm/Analysis/BlockFrequencyInfo.h"
+#include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Analysis/DominanceFrontier.h"
 #include "llvm/Analysis/LazyCallGraph.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -31,6 +27,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/Instructions.h"
@@ -44,7 +41,6 @@
 #include "llvm/Plugins/PassPlugin.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
@@ -54,14 +50,9 @@
 
 #include "hiredis.h"
 
-#include <algorithm>
 #include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <memory>
-#include <random>
-#include <sstream>
-#include <unordered_map>
 #include <utility>
 
 using namespace std;
@@ -139,9 +130,15 @@ llvm::cl::opt<bool>
                 llvm::cl::init(false));
 
 llvm::cl::opt<bool>
-    canon_all("minotaur-enable-canon",
-              llvm::cl::desc("minotaur: enable canonicalization"),
-              llvm::cl::init(true));
+    enable_canon("minotaur-enable-canon",
+                 llvm::cl::desc("minotaur: enable canonicalization"),
+                 llvm::cl::init(true));
+
+llvm::cl::opt<string>
+    canon_steps("minotaur-canon-steps",
+                llvm::cl::desc("minotaur: comma seperated list op canonization "
+                               "steps to use or all if all should be used"),
+                llvm::cl::value_desc("all"));
 
 llvm::cl::opt<string> report_dir("minotaur-report-dir",
                                  llvm::cl::desc("Save report to disk"),
@@ -295,10 +292,10 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
   config::debug_codegen = debug_codegen;
   config::debug_parser = debug_parser;
   config::slice_to = slice_to;
-  config::canon_all = canon_all;
+  config::enable_canon = enable_canon;
   smt::solver_print_queries(smt_verbose);
 
-  if (config::canon_all) {
+  if (config::enable_canon) {
     debug() << "[online] Canonicalization is enabled\n";
   }
 
@@ -373,16 +370,9 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
         if (!NewF.has_value())
           continue;
 
-        canonicalizer::Canonicalizer canonicalizer;
+        canonicalizer::Canonicalizer canonicalizer(canon_steps.getValue());
         std::vector<canonicalizer::ChangeSet> changes;
-        if (config::canon_all) {
-          canonicalizer.addStep(
-              std::make_unique<canonicalizer::UnusedArgumentStep>());
-          canonicalizer.addStep(
-              std::make_unique<canonicalizer::ArgumentOrderStep>());
-          canonicalizer.addStep(
-              std::make_unique<canonicalizer::StrictComparisonStep>());
-
+        if (config::enable_canon) {
           changes = canonicalizer.canonicalize(&NewF->first.get(), NewF->second,
                                                S.getValueMap());
 
@@ -397,8 +387,8 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
         if (!R.has_value())
           continue;
 
-        if (config::canon_all) {
-          canonicalizer.decanonicalize(R.value(), changes);
+        if (config::enable_canon) {
+          R = canonicalizer.decanonicalize(R.value(), changes);
         }
 
         unordered_set<llvm::Function *> IntrinDecls;
@@ -497,7 +487,7 @@ struct SuperoptimizerPass : PassInfoMixin<SuperoptimizerPass> {
     if (F.isDeclaration())
       return PA;
 
-    LoopInfo &LI = FAM.getResult<llvm::LoopAnalysis>(F);
+    LoopInfo &LI = FAM.getResult<LoopAnalysis>(F);
     DominatorTree &DT = FAM.getResult<DominatorTreeAnalysis>(F);
     // MemoryDependenceResults &MD = FAM.getResult<MemoryDependenceAnalysis>(F);
     TargetLibraryInfoWrapperPass TLI(Triple(F.getParent()->getTargetTriple()));

@@ -1,0 +1,12 @@
+; CHECK: define i32 @canonicalF(float %__canonArg, float %__canonArg1, i32 %__canonArg3, i32 %__canonArg4)
+
+define i32 @func(i32 %unused0, float %a, i32 %b, float %unused1, i32 %d, float %e, i1 %unused2) {
+  %fadd = fadd float %e, %a
+  %conv = fptosi float %fadd to i32
+  
+  %iadd = add i32 %d, %b
+  %total = add i32 %iadd, %conv
+
+  %zero = mul i32 %total, 0
+  ret i32 %zero
+}

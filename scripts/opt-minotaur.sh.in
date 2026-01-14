@@ -30,7 +30,8 @@ if [[ $SKIP == 0 ]]; then
   $@ \
   -passes="minotaur" \
   -minotaur-enable-canon=true \
-  -minotaur-enable-caching=false \
+  -minotaur-canon-steps="UnusedArgumentStep, ArgumentOrderStep, LeqLtComparisonStep, StrictComparisonStep" \
+  -minotaur-enable-caching=true \
   -minotaur-ignore-machine-cost=true \
   -minotaur-debug-codegen=false \
   -minotaur-debug-enumerator=$DEBUG \
