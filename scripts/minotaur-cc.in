@@ -62,4 +62,8 @@ if (getenv("MINOTAUR_NO_INFER")) {
   push @ARGV, ("-mllvm", "-minotaur-no-infer") unless $minotaur == 0;
 }
 
+if (getenv("MINOTAUR_CACHE_STATS")) {
+  push @ARGV, ("-mllvm", "-minotaur-cache-stats") unless $minotaur == 0;
+}
+
 exec @ARGV;

@@ -8,6 +8,7 @@
 #include "cost.h"
 #include "utils.h"
 #include "type.h"
+#include "cache-stats.h"
 
 #include "util/compiler.h"
 #include "llvm_util/llvm2alive.h"
@@ -916,6 +917,7 @@ push:
     }
     if (Duration > config::slice_to) {
       debug() << "[enumerator] timeout for candidate, skipping\n";
+      cache_stats_inc_timeouts();
       break;
     }
   }
@@ -942,6 +944,10 @@ push:
   }
 
   removeUnusedDecls(IntrinsicDecls);
+
+  unsigned Duration = ( std::clock() - start ) / CLOCKS_PER_SEC;
+  cache_stats_add_solver_time(Duration);
+
   return ret;
 }
 
