@@ -29,7 +29,7 @@ public:
   }
 };
 
-class ArgumentRenamingStep: public CanonicalizationStep {
+class ArgumentRenamingStep : public CanonicalizationStep {
 public:
   ChangeSet canonicalize(llvm::Function *F, llvm::Instruction *I) override;
   Rewrite decanonicalize(const Rewrite &R, const ChangeSet &cs) override;
@@ -38,7 +38,7 @@ public:
   }
 };
 
-class LeqLtComparisonStep: public CanonicalizationStep {
+class LeqLtComparisonStep : public CanonicalizationStep {
 public:
   ChangeSet canonicalize(llvm::Function *F, llvm::Instruction *I) override;
   Rewrite decanonicalize(const Rewrite &R, const ChangeSet &cs) override;
@@ -62,14 +62,4 @@ public:
     return "StrictComparisonStep";
   }
 };
-
-class LessThanCanonicalizationStep : public CanonicalizationStep {
-public:
-  ChangeSet canonicalize(llvm::Function *F, llvm::Instruction *I) override;
-  Rewrite decanonicalize(const Rewrite &R, const ChangeSet &cs) override;
-  std::string getName() const override {
-    return "LessThanCanonicalizationStep";
-  }
-};
-
 } // namespace minotaur::canonicalizer
