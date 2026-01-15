@@ -556,8 +556,19 @@ bool pipelineParsingCallback(StringRef Name, FunctionPassManager &FPM,
   return false;
 }
 
+bool pipelineParsingCallbackModule(StringRef Name, ModulePassManager &MPM,
+                                   ArrayRef<PassBuilder::PipelineElement>) {
+  if (Name == "minotaur") {
+    MPM.addPass(createModuleToFunctionPassAdaptor(SuperoptimizerPass()));
+    MPM.addPass(SuperoptimizerModulePass());
+    return true;
+  }
+  return false;
+}
+
 void passBuilderCallback(PassBuilder &PB) {
   PB.registerPipelineParsingCallback(pipelineParsingCallback);
+  PB.registerPipelineParsingCallback(pipelineParsingCallbackModule);
   PB.registerVectorizerEndEPCallback(
       [](llvm::FunctionPassManager &FPM, llvm::OptimizationLevel) {
         FPM.addPass(SuperoptimizerPass());
