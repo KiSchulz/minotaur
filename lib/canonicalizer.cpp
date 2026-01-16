@@ -56,7 +56,8 @@ void Canonicalizer::cleanModule(llvm::Function *F) {
 }
 
 bool Canonicalizer::shouldRunStep(const CanonicalizationStep &step) {
-  return steps_config.find("all") != std::string::npos ||
+  return steps_config.empty() ||
+         steps_config.find("all") != std::string::npos ||
          steps_config.find(step.getName()) != std::string::npos;
 }
 
