@@ -11,6 +11,7 @@
 #include "slice.h"
 #include "util/random.h"
 #include "utils.h"
+#include "cache-stats.h"
 
 #include "llvm_util/llvm2alive.h"
 #include "smt/smt.h"
@@ -60,6 +61,14 @@ using namespace llvm;
 using namespace minotaur;
 
 namespace fs = std::filesystem;
+
+static CacheStats cache_stats_data;
+namespace minotaur {
+  void cache_stats_inc_timeouts() { cache_stats_data.timeouts++; }
+  void cache_stats_add_solver_time(size_t t) {
+    cache_stats_data.total_solver_time += t;
+  }
+}
 
 namespace {
 
@@ -144,6 +153,11 @@ llvm::cl::opt<string> report_dir("minotaur-report-dir",
                                  llvm::cl::desc("Save report to disk"),
                                  llvm::cl::value_desc("directory"));
 
+llvm::cl::opt<bool> cache_stats(
+    "minotaur-cache-stats",
+    llvm::cl::desc("minotaur: report cache statistics"),
+    llvm::cl::init(false));
+
 static bool dom_check(llvm::Value *V, DominatorTree &DT, llvm::Use &U) {
   if (auto I = dyn_cast<Instruction>(V)) {
     for (auto &op : I->operands()) {
@@ -154,6 +168,22 @@ static bool dom_check(llvm::Value *V, DominatorTree &DT, llvm::Use &U) {
     }
   }
   return true;
+}
+
+static void print_cache_stats() {
+  size_t total = cache_stats_data.hits + cache_stats_data.misses;
+  double hit_rate = total == 0 ? 0.0 :
+                    (double)cache_stats_data.hits / (double)total * 100.0;
+  
+  std::ostringstream oss;
+  oss << std::fixed << std::setprecision(2) << hit_rate;
+  config::dbg() << "[minotaur] cache stats: queries = " << total << "\n"
+        << "hits = " << cache_stats_data.hits
+        << ", misses = " << cache_stats_data.misses << "\n"
+        << "hit rate = " << oss.str() << "%\n"
+        << "solver calls = " << cache_stats_data.solver_calls << "\n"
+        << "total solver time = " << cache_stats_data.total_solver_time << " s\n"
+        << "timeouts = " << cache_stats_data.timeouts << "\n\n";
 }
 
 struct debug {
@@ -186,6 +216,9 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
     std::string rewrite;
 
     if (minotaur::hGet(bytecode.c_str(), bytecode.size(), rewrite, ctx)) {
+      if (cache_stats)
+        cache_stats_data.hits++;
+
       if (rewrite == "<no-sol>") {
         debug() << "[online] cache matched, but no solution found in "
                    "previous run, skipping function: "
@@ -204,6 +237,8 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
         debug() << *RHSs[0].I << "\n";
         from_cache = true;
       }
+    } else if (cache_stats) {
+      cache_stats_data.misses++;
     }
   }
 
@@ -218,6 +253,7 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
     // in force_infer mode, as from_cache is always false, we run synthesizer
     // in normal mode, we run synthesizer only when cache misses
     debug() << "[online] working on function:\n" << F;
+    cache_stats_data.solver_calls++;
     RHSs = EN.solve(F, I);
     if (RHSs.empty()) {
       if (enable_caching)
@@ -376,8 +412,10 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
           changes = canonicalizer.canonicalize(&NewF->first.get(), NewF->second,
                                                S.getValueMap());
 
-          NewF->first = *changes.back().stepFunc;
-          NewF->second = changes.back().I;
+          if (!changes.empty()) {
+            NewF->first = *changes.back().stepFunc;
+            NewF->second = changes.back().I;
+          }
         }
 
         Enumerator EN;
@@ -457,6 +495,8 @@ struct SuperoptimizerLegacyPass final : public llvm::FunctionPass {
   }
 
   bool doFinalization(llvm::Module &) override {
+    if (cache_stats)
+      print_cache_stats();
     return false;
   }
 
@@ -496,7 +536,16 @@ struct SuperoptimizerPass : PassInfoMixin<SuperoptimizerPass> {
   }
 };
 
-} // namespace
+struct SuperoptimizerModulePass : PassInfoMixin<SuperoptimizerModulePass> {
+  PreservedAnalyses run(llvm::Module &M, ModuleAnalysisManager &MAM) {
+    if (cache_stats)
+      print_cache_stats();
+    
+    return PreservedAnalyses::all();
+  }
+};
+
+}// namespace
 
 bool pipelineParsingCallback(StringRef Name, FunctionPassManager &FPM,
                              ArrayRef<PassBuilder::PipelineElement>) {
@@ -507,11 +556,26 @@ bool pipelineParsingCallback(StringRef Name, FunctionPassManager &FPM,
   return false;
 }
 
+bool pipelineParsingCallbackModule(StringRef Name, ModulePassManager &MPM,
+                                   ArrayRef<PassBuilder::PipelineElement>) {
+  if (Name == "minotaur") {
+    MPM.addPass(createModuleToFunctionPassAdaptor(SuperoptimizerPass()));
+    MPM.addPass(SuperoptimizerModulePass());
+    return true;
+  }
+  return false;
+}
+
 void passBuilderCallback(PassBuilder &PB) {
   PB.registerPipelineParsingCallback(pipelineParsingCallback);
+  PB.registerPipelineParsingCallback(pipelineParsingCallbackModule);
   PB.registerVectorizerEndEPCallback(
       [](llvm::FunctionPassManager &FPM, llvm::OptimizationLevel) {
         FPM.addPass(SuperoptimizerPass());
+      });
+  PB.registerOptimizerLastEPCallback(
+      [](llvm::ModulePassManager &MPM, llvm::OptimizationLevel, llvm::ThinOrFullLTOPhase) {
+        MPM.addPass(SuperoptimizerModulePass());
       });
 }
 

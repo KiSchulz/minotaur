@@ -66,4 +66,8 @@ if (getenv("MINOTAUR_ENABLE_CANON")) {
   push @ARGV, ("-mllvm", "-minotaur-enable-canon") unless $minotaur == 0;
 }
 
+if (getenv("MINOTAUR_CACHE_STATS")) {
+  push @ARGV, ("-mllvm", "-minotaur-cache-stats") unless $minotaur == 0;
+}
+
 exec @ARGV;
