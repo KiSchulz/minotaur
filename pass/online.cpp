@@ -1,7 +1,7 @@
 // Copyright (c) 2020-present, author: Zhengyang Liu (liuz@cs.utah.edu).
 // Distributed under the MIT license that can be found in the LICENSE file.
 #include "canonicalizer.h"
-#include "canonicalizers.h"
+#include "Timer.h"
 #include "codegen.h"
 #include "config.h"
 #include "enumerator.h"
@@ -51,6 +51,7 @@
 
 #include "hiredis.h"
 
+#include <chrono>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -177,13 +178,21 @@ static void print_cache_stats() {
   
   std::ostringstream oss;
   oss << std::fixed << std::setprecision(2) << hit_rate;
-  config::dbg() << "[minotaur] cache stats: queries = " << total << "\n"
-        << "hits = " << cache_stats_data.hits
-        << ", misses = " << cache_stats_data.misses << "\n"
-        << "hit rate = " << oss.str() << "%\n"
+  config::dbg() << "[CACHE_STATS_BEGIN]\n"
+        << "enable_canon = " << config::enable_canon << "\n"
+        << "canon_time = " << cache_stats_data.canon_time <<  " ns\n"
+        << "time = " << time(nullptr) << "\n"
+        << "queries = " << total << "\n"
+        << "hits = " << cache_stats_data.hits << "\n"
+        << "misses = " << cache_stats_data.misses << "\n"
+        << "sols = " << cache_stats_data.sols << "\n"
+        << "hit rate = " << oss.str() << " %\n"
         << "solver calls = " << cache_stats_data.solver_calls << "\n"
         << "total solver time = " << cache_stats_data.total_solver_time << " s\n"
-        << "timeouts = " << cache_stats_data.timeouts << "\n\n";
+        << "timeouts = " << cache_stats_data.timeouts << "\n"
+        << "[CACHE_STATS_END]" << "\n\n";
+
+    config::dbg().flush();
 }
 
 struct debug {
@@ -234,6 +243,10 @@ static optional<Rewrite> infer(Function &F, Instruction *I, redisContext *ctx,
           debug() << "[online] failed to parse cached solution\n";
           return nullopt;
         }
+
+        if (cache_stats)
+          cache_stats_data.sols++;
+        
         debug() << *RHSs[0].I << "\n";
         from_cache = true;
       }
@@ -406,6 +419,7 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
         if (!NewF.has_value())
           continue;
 
+        Timer<std::chrono::nanoseconds> t;
         canonicalizer::Canonicalizer canonicalizer(canon_steps.getValue());
         std::vector<canonicalizer::ChangeSet> changes;
         if (config::enable_canon) {
@@ -417,6 +431,7 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
             NewF->second = changes.back().I;
           }
         }
+        cache_stats_data.canon_time += t.stop().count();
 
         Enumerator EN;
         parse::Parser P(NewF->first);
@@ -425,9 +440,11 @@ static bool optimize_function(llvm::Function &F, LoopInfo &LI,
         if (!R.has_value())
           continue;
 
+        t.stop();
         if (config::enable_canon) {
           R = canonicalizer.decanonicalize(R.value(), changes);
         }
+        cache_stats_data.canon_time += t.stop().count();
 
         unordered_set<llvm::Function *> IntrinDecls;
         Instruction *insertpt = I.getNextNode();
